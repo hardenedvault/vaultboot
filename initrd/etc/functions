@@ -22,8 +22,8 @@ recovery() {
 	# ensure /tmp/config exists for recovery scripts that depend on it
 	touch /tmp/config
 
-	if [ "$CONFIG_TPM" = y ]; then
-		tpm extend -ix 4 -ic recovery
+	if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ]; then
+		tpmr extend -ix 4 -ic recovery
 	fi
 
 	while [ true ]
@@ -47,7 +47,11 @@ pause_recovery() {
 }
 
 pcrs() {
-	head -8 /sys/class/tpm/tpm0/pcrs
+	if [ "$CONFIG_TPM" = "y" ]; then
+		head -8 /sys/class/tpm/tpm0/pcrs
+	elif [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
+		tpm2 pcrread sha256
+	fi
 }
 
 confirm_totp()
@@ -62,7 +66,7 @@ confirm_totp()
 		date=`date "+%Y-%m-%d %H:%M:%S"`
 		seconds=`date "+%s"`
 		half=`expr \( $seconds % 60 \) / 30`
-		if [ "$CONFIG_TPM" != y ]; then
+		if [ "$CONFIG_TPM" != "y" -a "$CONFIG_TPM2_TOOLS" != "y" ]; then
 			TOTP="NO TPM"
 		elif [ "$half" != "$last_half" ]; then
 			last_half=$half;
@@ -132,6 +136,34 @@ enable_usb()
 
 }
 
+enable_sata()
+{
+	for mod in libata libahci ahci; do
+		if ! lsmod | grep -q "^$mod " ; then
+			insmod "/lib/modules/$mod.ko" \
+				|| die "$mod: Unable to load module"
+		fi
+	done
+
+	if [ ! -z "$1" ]; then
+		exec mount "$@"
+	fi
+}
+
+enable_nvme()
+{
+	for mod in nvme-core nvme; do
+		if ! lsmod | grep -q "^$mod " ; then
+			insmod "/lib/modules/$mod.ko" \
+				|| die "$mod: Unable to load module"
+		fi
+	done
+
+	if [ ! -z "$1" ]; then
+		exec mount "$@"
+	fi
+}
+
 confirm_gpg_card()
 {
 	read \
@@ -186,7 +218,7 @@ check_tpm_counter()
 		warn "$1 does not exist; creating new TPM counter"
 		read -s -p "TPM Owner password: " tpm_password
 		echo
-		tpm counter_create \
+		tpmr counter_create \
 			-pwdo "$tpm_password" \
 			-pwdc '' \
 			-la $LABEL \
@@ -202,13 +234,13 @@ check_tpm_counter()
 
 read_tpm_counter()
 {
-	tpm counter_read -ix "$1" | tee "/tmp/counter-$1" \
+	tpmr counter_read -ix "$1" | tee "/tmp/counter-$1" \
 	|| die "Counter read failed"
 }
 
 increment_tpm_counter()
 {
-	tpm counter_increment -ix "$1" -pwdc '' \
+	tpmr counter_increment -ix "$1" -pwdc '' \
 		| tee /tmp/counter-$1 \
 	|| die "Counter increment failed"
 }
@@ -290,8 +322,10 @@ update_checksums()
 
 	# sign and auto-roll config counter
 	extparam=
-	if [ "$CONFIG_TPM" = "y" ]; then
-		extparam=-r
+	if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ];then
+		if [ "$CONFIG_IGNORE_ROLLBACK" != "y" ]; then
+			extparam=-r
+		fi
 	fi
 	if ! kexec-sign-config -p /boot -u $extparam ; then
 		rv=1
@@ -303,6 +337,20 @@ update_checksums()
 	mount -o ro,remount /boot
 
 	return $rv
+}
+
+# evaluate key-value pair like 'LABEL=boot' to real path
+# busybox's blkid only supports LABEL and UUID
+evaluate_boot_device()
+{
+	if echo "$1" | grep -q '^/'; then
+		# if $1 contains an absolute path, output it as-is
+		echo "$1"
+	else
+		key="$(echo $1 | cut -f1 -d =)"
+		value="$(echo $1 | cut -f2 -d =)"
+		blkid | grep "$key=\"$value\"" | cut -f1 -d ':'
+	fi
 }
 
 # detect and set /boot device
@@ -379,4 +427,14 @@ generate_random_mac_address()
 {
 	#Borrowed from https://stackoverflow.com/questions/42660218/bash-generate-random-mac-address-unicast
 	hexdump -n 6 -ve '1/1 "%.2x "' /dev/urandom | awk -v a="2,6,a,e" -v r="$RANDOM" 'BEGIN{srand(r);}NR==1{split(a,b,",");r=int(rand()*4+1);printf "%s%s:%s:%s:%s:%s:%s\n",substr($1,0,1),b[r],$2,$3,$4,$5,$6}'
+}
+
+lock_chip() {
+	APM_CNT=0xb2
+	COMMON_LOCK=0xcb
+	VAULT_LOCK=0xfa
+	echo "VaultFW locking"
+	io386 -o b -b x $APM_CNT $VAULT_LOCK
+	echo "Common locking"
+	io386 -o b -b x $APM_CNT $COMMON_LOCK
 }

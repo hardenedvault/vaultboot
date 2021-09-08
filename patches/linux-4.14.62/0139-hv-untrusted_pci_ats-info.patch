@@ -1,0 +1,259 @@
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index 7d8b17c..56498c2 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3155,6 +3155,8 @@
+ 				on: Turn realloc on
+ 		realloc		same as realloc=on
+ 		noari		do not use PCIe ARI.
++		noats		[PCIE, Intel-IOMMU, AMD-IOMMU]
++				do not use PCIe ATS (and IOMMU device IOTLB).
+ 		pcie_scan_all	Scan all possible PCIe devices.  Otherwise we
+ 				only look for one device below a PCIe downstream
+ 				port.
+diff --git a/drivers/acpi/property.c b/drivers/acpi/property.c
+index e26ea20..4fa8b1c 100644
+--- a/drivers/acpi/property.c
++++ b/drivers/acpi/property.c
+@@ -28,6 +28,20 @@ static int acpi_data_get_property_array(const struct acpi_device_data *data,
+ static const guid_t prp_guid =
+ 	GUID_INIT(0xdaffd814, 0x6eba, 0x4d8c,
+ 		  0x8a, 0x91, 0xbc, 0x9b, 0xbf, 0x4a, 0xa3, 0x01);
++
++/*
++ * The GUIDs here are made equivalent to each other in order to avoid extra
++ * complexity in the properties handling code, with the caveat that the
++ * kernel will accept certain combinations of GUID and properties that are
++ * not defined without a warning. For instance if any of the properties
++ * from different GUID appear in a property list of another, it will be
++ * accepted by the kernel. Firmware validation tools should catch these.
++ */
++	/* External facing port GUID: efcc06cc-73ac-4bc3-bff0-76143807c389 */
++static const guid_t prp_guid2 =
++	GUID_INIT(0xefcc06cc, 0x73ac, 0x4bc3,
++		  0xbf, 0xf0, 0x76, 0x14, 0x38, 0x07, 0xc3, 0x89);
++
+ /* ACPI _DSD data subnodes GUID: dbb8e3e6-5886-4ba6-8795-1319f52a966b */
+ static const guid_t ads_guid =
+ 	GUID_INIT(0xdbb8e3e6, 0x5886, 0x4ba6,
+@@ -312,7 +326,8 @@ static bool acpi_extract_properties(const union acpi_object *desc,
+ 		    properties->type != ACPI_TYPE_PACKAGE)
+ 			break;
+ 
+-		if (!guid_equal((guid_t *)guid->buffer.pointer, &prp_guid))
++		if (!guid_equal((guid_t *)guid->buffer.pointer, &prp_guid) &&
++		!guid_equal((guid_t *)guid->buffer.pointer, &prp_guid2))
+ 			continue;
+ 
+ 		/*
+diff --git a/drivers/iommu/amd_iommu.c b/drivers/iommu/amd_iommu.c
+index 766103e..7c34661 100644
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -367,6 +367,9 @@ static bool pci_iommuv2_capable(struct pci_dev *pdev)
+ 	};
+ 	int i, pos;
+ 
++	if (pci_ats_disabled())
++		return false;
++
+ 	for (i = 0; i < 3; ++i) {
+ 		pos = pci_find_ext_capability(pdev, caps[i]);
+ 		if (pos == 0)
+@@ -3548,9 +3551,11 @@ int amd_iommu_device_info(struct pci_dev *pdev,
+ 
+ 	memset(info, 0, sizeof(*info));
+ 
+-	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_ATS);
+-	if (pos)
+-		info->flags |= AMD_IOMMU_DEVICE_FLAG_ATS_SUP;
++	if (!pci_ats_disabled()) {
++		pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_ATS);
++		if (pos)
++			info->flags |= AMD_IOMMU_DEVICE_FLAG_ATS_SUP;
++	}
+ 
+ 	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
+ 	if (pos)
+diff --git a/drivers/iommu/dmar.c b/drivers/iommu/dmar.c
+index c0d1c4d..38d0128 100644
+--- a/drivers/iommu/dmar.c
++++ b/drivers/iommu/dmar.c
+@@ -144,7 +144,7 @@ dmar_alloc_pci_notify_info(struct pci_dev *dev, unsigned long event)
+ 		for (tmp = dev; tmp; tmp = tmp->bus->self)
+ 			level++;
+ 
+-	size = sizeof(*info) + level * sizeof(struct acpi_dmar_pci_path);
++	size = sizeof(*info) + level * sizeof(info->path[0]);
+ 	if (size <= sizeof(dmar_pci_notify_info_buf)) {
+ 		info = (struct dmar_pci_notify_info *)dmar_pci_notify_info_buf;
+ 	} else {
+diff --git a/drivers/iommu/intel-iommu.c b/drivers/iommu/intel-iommu.c
+index 802ba7b..24a6660 100644
+--- a/drivers/iommu/intel-iommu.c
++++ b/drivers/iommu/intel-iommu.c
+@@ -1530,7 +1530,8 @@ static void iommu_enable_dev_iotlb(struct device_domain_info *info)
+ 	if (info->pri_supported && !pci_reset_pri(pdev) && !pci_enable_pri(pdev, 32))
+ 		info->pri_enabled = 1;
+ #endif
+-	if (info->ats_supported && !pci_enable_ats(pdev, VTD_PAGE_SHIFT)) {
++	if (!pdev->untrusted && info->ats_supported &&
++	    !pci_enable_ats(pdev, VTD_PAGE_SHIFT)) {
+ 		info->ats_enabled = 1;
+ 		domain_update_iotlb(info->domain);
+ 		info->ats_qdep = pci_ats_queue_depth(pdev);
+@@ -2477,7 +2478,8 @@ static struct dmar_domain *dmar_insert_one_dev_info(struct intel_iommu *iommu,
+ 	if (dev && dev_is_pci(dev)) {
+ 		struct pci_dev *pdev = to_pci_dev(info->dev);
+ 
+-		if (ecap_dev_iotlb_support(iommu->ecap) &&
++		if (!pci_ats_disabled() &&
++		    ecap_dev_iotlb_support(iommu->ecap) &&
+ 		    pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_ATS) &&
+ 		    dmar_find_matched_atsr_unit(pdev))
+ 			info->ats_supported = 1;
+diff --git a/drivers/pci/ats.c b/drivers/pci/ats.c
+index ad8ddbb..420ab02 100644
+--- a/drivers/pci/ats.c
++++ b/drivers/pci/ats.c
+@@ -21,6 +21,9 @@ void pci_ats_init(struct pci_dev *dev)
+ {
+ 	int pos;
+ 
++	if (pci_ats_disabled())
++		return;
++
+ 	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ATS);
+ 	if (!pos)
+ 		return;
+diff --git a/drivers/pci/pci-acpi.c b/drivers/pci/pci-acpi.c
+index a3cedf8..8d213a7 100644
+--- a/drivers/pci/pci-acpi.c
++++ b/drivers/pci/pci-acpi.c
+@@ -723,6 +723,28 @@ static void pci_acpi_optimize_delay(struct pci_dev *pdev,
+ 	ACPI_FREE(obj);
+ }
+ 
++static void pci_acpi_set_untrusted(struct pci_dev *dev)
++{
++	u8 val;
++
++	if (pci_pcie_type(dev) != PCI_EXP_TYPE_ROOT_PORT)
++		return;
++	if (device_property_read_u8(&dev->dev, "ExternalFacingPort", &val)){
++		pr_info("Trusted PCI device: %s\n", dev_name(&dev->dev)); 
++		return;
++	}
++ 
++        /*
++         * These root ports expose PCIe (including DMA) outside of the                                              
++         * system so make sure we treat them and everything behind as                                               
++         * untrusted.                                                                                               
++         */
++        if (val){
++                dev->untrusted = 1;
++		pr_info("Untrusted PCI device: %s\n", dev_name(&dev->dev)); 
++        }
++}
++
+ static void pci_acpi_setup(struct device *dev)
+ {
+ 	struct pci_dev *pci_dev = to_pci_dev(dev);
+@@ -732,6 +754,7 @@ static void pci_acpi_setup(struct device *dev)
+ 		return;
+ 
+ 	pci_acpi_optimize_delay(pci_dev, adev->handle);
++	pci_acpi_set_untrusted(pci_dev);
+ 
+ 	pci_acpi_add_pm_notifier(adev, pci_dev);
+ 	if (!adev->wakeup.flags.valid)
+diff --git a/drivers/pci/pci.c b/drivers/pci/pci.c
+index 1af30c8..7d6dda4 100644
+--- a/drivers/pci/pci.c
++++ b/drivers/pci/pci.c
+@@ -110,6 +110,14 @@ unsigned int pcibios_max_latency = 255;
+ /* If set, the PCIe ARI capability will not be used. */
+ static bool pcie_ari_disabled;
+ 
++/* If set, the PCIe ATS capability will not be used. */
++static bool pcie_ats_disabled;
++
++bool pci_ats_disabled(void)
++{
++	return pcie_ats_disabled;
++}
++
+ /* Disable bridge_d3 for all PCIe ports */
+ static bool pci_bridge_d3_disable;
+ /* Force bridge_d3 for all PCIe ports */
+@@ -5541,6 +5549,9 @@ static int __init pci_setup(char *str)
+ 		if (*str && (str = pcibios_setup(str)) && *str) {
+ 			if (!strcmp(str, "nomsi")) {
+ 				pci_no_msi();
++			} else if (!strncmp(str, "noats", 5)) {
++				pr_info("PCIe: ATS is disabled\n");
++				pcie_ats_disabled = true;
+ 			} else if (!strcmp(str, "noaer")) {
+ 				pci_no_aer();
+ 			} else if (!strncmp(str, "realloc=", 8)) {
+diff --git a/drivers/pci/probe.c b/drivers/pci/probe.c
+index e23bfd9..fd1a6f6 100644
+--- a/drivers/pci/probe.c
++++ b/drivers/pci/probe.c
+@@ -1386,6 +1386,19 @@ static int pci_intx_mask_broken(struct pci_dev *dev)
+ 	return 0;
+ }
+ 
++static void set_pcie_untrusted(struct pci_dev *dev)
++{
++	struct pci_dev *parent;
++
++	/*
++	 * If the upstream bridge is untrusted we treat this device
++	 * untrusted as well.
++	 */
++	parent = pci_upstream_bridge(dev);
++	if (parent && parent->untrusted)
++		dev->untrusted = true;
++}
++
+ /**
+  * pci_setup_device - fill in class and map information of a device
+  * @dev: the device structure to fill
+@@ -1438,6 +1451,8 @@ int pci_setup_device(struct pci_dev *dev)
+ 	/* need to have dev->cfg_size ready */
+ 	set_pcie_thunderbolt(dev);
+ 
++	set_pcie_untrusted(dev);
++
+ 	/* "Unknown power state" */
+ 	dev->current_state = PCI_UNKNOWN;
+ 
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index b1abbcc..1c4182b 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -395,6 +395,14 @@ struct pci_dev {
+ 	unsigned int	reset_fn:1;
+ 	unsigned int    is_hotplug_bridge:1;
+ 	unsigned int	is_thunderbolt:1; /* Thunderbolt controller */
++	/*
++	 * Devices marked being untrusted are the ones that can potentially
++	 * execute DMA attacks and similar. They are typically connected
++	 * through external ports such as Thunderbolt but not limited to
++	 * that. When an IOMMU is enabled they should be getting full
++	 * mappings to make sure they cannot access arbitrary memory.
++	 */
++	unsigned int	untrusted:1;
+ 	unsigned int    __aer_firmware_first_valid:1;
+ 	unsigned int	__aer_firmware_first:1;
+ 	unsigned int	broken_intx_masking:1; /* INTx masking can't be used */
+@@ -1492,6 +1500,8 @@ int  ht_create_irq(struct pci_dev *dev, int idx);
+ void ht_destroy_irq(unsigned int irq);
+ #endif /* CONFIG_HT_IRQ */
+ 
++bool pci_ats_disabled(void);
++
+ #ifdef CONFIG_PCI_ATS
+ /* Address Translation Service */
+ void pci_ats_init(struct pci_dev *dev);

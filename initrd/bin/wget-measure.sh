@@ -17,6 +17,6 @@ fi
 wget "$URL" || die "$URL: failed"
 
 FILE="`basename "$URL"`"
-tpm extend -ix "$INDEX" -if "$FILE" || die "$FILE: tpm extend failed"
+tpmr extend -ix "$INDEX" -if "$FILE" || die "$FILE: tpm extend failed"
 
 

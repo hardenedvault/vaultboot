@@ -4,9 +4,9 @@
 . /etc/functions
 . /tmp/config
 
-if [ "$CONFIG_TPM" = "y" ]; then
+if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ]; then
 	# Extend PCR4 as soon as possible
-	tpm extend -ix 4 -ic usb
+	tpmr extend -ix 4 -ic usb
 fi
 
 usb-scan

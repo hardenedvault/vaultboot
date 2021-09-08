@@ -30,6 +30,10 @@ if [ ! -r /dev/ptmx ]; then
 	ln -s /dev/pts/ptmx /dev/ptmx
 fi
 
+[ -a /dev/stdin ] || ln -s /proc/self/fd/0 /dev/stdin
+[ -a /dev/stdout ] || ln -s /proc/self/fd/1 /dev/stdout
+[ -a /dev/stderr ] || ln -s /proc/self/fd/2 /dev/stderr
+
 # Recovery shells will erase anything from here
 mkdir -p /tmp/secret
 
@@ -54,6 +58,11 @@ else
 	export BG_COLOR_ERROR="${CONFIG_ERROR_BG_COLOR:-""}"
 fi
 
+if [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
+	# Initialize tpm2 encrypted sessions here
+	tpmr startsession
+fi
+
 if [ "$CONFIG_COREBOOT" = "y" ]; then
 	/bin/cbfs-init
 fi
@@ -74,6 +83,15 @@ if [ ! -z "$CONFIG_BOOT_RECOVERY_SERIAL" ]; then
 		> "$CONFIG_BOOT_RECOVERY_SERIAL" 2>&1 &
 fi
 
+# load ATA and NVME modules if they exist
+if [ -r /lib/modules/libata.ko ]; then
+	enable_sata
+fi
+
+if [ -r /lib/modules/nvme.ko ]; then
+	enable_nvme
+fi
+
 # load USB modules for boards using a USB keyboard
 if [ "$CONFIG_USB_KEYBOARD" = "y" ]; then
 	enable_usb
@@ -92,14 +110,19 @@ if [ "$boot_option" = "r" ]; then
 	# Start an interactive shell
 	recovery 'User requested recovery shell'
 	# just in case...
-	if [ "$CONFIG_TPM" = "y" ]; then
-		tpm extend -ix 4 -ic recovery
+	if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ]; then
+		tpmr extend -ix 4 -ic recovery
 	fi
 	exec /bin/ash
 	exit
 fi
 
 combine_configs
+
+# evaluate CONFIG_BOOT_DEV in key-value pair format
+bootdev=$(evaluate_boot_device "$CONFIG_BOOT_DEV")
+replace_config /tmp/config "CONFIG_BOOT_DEV" "$bootdev"
+
 . /tmp/config
 
 # export firmware version
@@ -136,7 +159,7 @@ else
 fi
 
 # belts and suspenders, just in case...
-if [ "$CONFIG_TPM" = "y" ]; then
-	tpm extend -ix 4 -ic recovery
+if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = y ]; then
+	tpmr extend -ix 4 -ic recovery
 fi
 exec /bin/ash

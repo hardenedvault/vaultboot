@@ -1,0 +1,15 @@
+diff --git a/drivers/misc/mei/hbm.c b/drivers/misc/mei/hbm.c
+index 995ff1b..36a67fa 100644
+--- a/drivers/misc/mei/hbm.c
++++ b/drivers/misc/mei/hbm.c
+@@ -1250,8 +1250,8 @@ int mei_hbm_dispatch(struct mei_device *dev, struct mei_msg_hdr *hdr)
+ 		break;
+ 
+ 	default:
+-		BUG();
+-		break;
++		WARN(1, "hbm: wrong command %d\n", mei_msg->hbm_cmd);
++		return -EPROTO;
+ 
+ 	}
+ 	return 0;

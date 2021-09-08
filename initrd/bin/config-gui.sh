@@ -126,7 +126,9 @@ while true; do
         # reset TPM if present
         if [ "$CONFIG_TPM" = "y" ]; then
           /bin/tpm-reset
-        fi
+        elif [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
+	  tpmr reset
+	fi
         whiptail --title 'Configuration Reset Updated Successfully' \
           --msgbox "Configuration reset and BIOS updated successfully.\n\nPress Enter to reboot" 16 60
         /bin/reboot

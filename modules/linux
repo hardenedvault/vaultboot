@@ -6,6 +6,9 @@ linux_hash := 51ca4d7e8ee156dc0f19bc7768915cfae41dbb0b4f251e4fa8b178c5674c22ab
 else ifeq "$(CONFIG_LINUX_VERSION)" "4.19.139"
 linux_version := 4.19.139
 linux_hash := 9c4ebf21fe949f80fbcfbbd6e7fe181040d325e89475e230ab53ef01f9d55605
+else ifeq "$(CONFIG_LINUX_VERSION)" "5.4.68"
+linux_version := 5.4.68
+linux_hash := 0e93876c5ae8dc0c55cbe631971a46ab02b90cf7461fed3085703a5e4e3cd6dd
 else ifeq "$(CONFIG_LINUX_VERSION)" "5.4.69"
 linux_version := 5.4.69
 linux_hash := a8b31d716b397303a183e42ad525ff2871024a43e3ea530d0fdf73b7f9d27da7
@@ -114,6 +117,10 @@ linux_modules-$(CONFIG_LINUX_MEI)	+= drivers/misc/mei/mei.ko
 linux_modules-$(CONFIG_LINUX_MEI)	+= drivers/misc/mei/mei-me.ko
 
 EXTRA_FLAGS := -fdebug-prefix-map=$(pwd)=heads -gno-record-gcc-switches
+
+ifeq "$(CONFIG_LINUX_VERSION)" "4.14.62"
+EXTRA_FLAGS += -Wno-cast-function-type
+endif
 
 linux_target := \
 	O="$(build)/$(linux_dir)" \
