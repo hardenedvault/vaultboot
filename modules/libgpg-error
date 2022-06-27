@@ -8,7 +8,7 @@ libgpg-error_hash := b32d6ff72a73cf79797f7f2d039e95e9c6f92f0c1450215410840ab62ae
 libgpg-error_configure := ./configure \
 	$(CROSS_TOOLS) \
 	--prefix "/" \
-	--host=x86_64-linux-musl \
+	--host=$(target) \
 	--disable-static \
 	--disable-nls \
 	--disable-languages \

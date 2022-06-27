@@ -881,6 +881,7 @@ while true; do
       continue
     fi
   fi
+
 done
 
 recovery "Something failed during boot"

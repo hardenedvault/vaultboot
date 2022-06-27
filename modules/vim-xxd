@@ -1,0 +1,28 @@
+# xxd of vim
+modules-$(CONFIG_VIM_XXD) += vim-xxd
+
+vim-xxd_version := 8.2.4793
+vim-xxd_dir := vim-xxd-$(vim-xxd_version)
+vim-xxd_tar := vim-xxd-$(vim-xxd_version).tar.gz
+vim-xxd_url := https://github.com/vim/vim/archive/refs/tags/v$(vim-xxd_version).tar.gz
+vim-xxd_hash := 03c60203c5a8bf754b98d2ff73f69ee3474a07d3cd26819f039a94604251daab
+
+# We do not need to build vim
+vim-xxd_target := -q || true \
+	       && $(MAKE) $(CROSS_TOOLS) -C $(build)/$(vim-xxd_dir)/src/xxd \
+
+vim-xxd_output :=
+
+ifeq "$(CONFIG_VIM_XXD)" "y"
+initrd_bins += $(initrd_tmp_dir)/bin/xxd
+endif
+
+$(build)/$(vim-xxd_dir)/src/xxd/xxd: $(build)/$(vim-xxd_dir)/.build
+
+# Replace /bin/xxd linked to busybox
+$(initrd_tmp_dir)/bin/xxd: $(build)/$(vim-xxd_dir)/src/xxd/xxd \
+	$(initrd_tmp_dir)/bin/busybox
+	install -Dm 755 "$<" "$@"
+	$(CROSS)strip --preserve-dates "$@" 2>&-
+
+vim-xxd_depends := $(musl_dep) busybox

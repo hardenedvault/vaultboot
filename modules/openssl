@@ -15,7 +15,7 @@ openssl_configure := \
 	LDFLAGS="-L$(LIBGCC_DIR)" \
 	./Configure \
 		--prefix="/" \
-		linux-x86_64 \
+		linux-$(strip $(arch)) \
 
 openssl_target := $(MAKE_JOBS) \
 	build_programs \

@@ -30,9 +30,12 @@ if [ ! -r /dev/ptmx ]; then
 	ln -s /dev/pts/ptmx /dev/ptmx
 fi
 
+
 [ -a /dev/stdin ] || ln -s /proc/self/fd/0 /dev/stdin
 [ -a /dev/stdout ] || ln -s /proc/self/fd/1 /dev/stdout
 [ -a /dev/stderr ] || ln -s /proc/self/fd/2 /dev/stderr
+# Needed by bash
+[ -a /dev/fd ] || ln -s /proc/self/fd /dev/fd
 
 # Recovery shells will erase anything from here
 mkdir -p /tmp/secret
@@ -70,6 +73,11 @@ if [ "$CONFIG_LINUXBOOT" = "y" ]; then
 	/bin/uefi-init
 fi
 
+# Set system time to BUILD_TIME on boards without an RTC
+if [ "$CONFIG_NO_RTC" = "y" ]; then
+	date -s "$BUILD_TIME"
+fi
+
 # Set GPG_TTY before calling gpg in key-init
 export GPG_TTY=/dev/console
 
@@ -83,13 +91,17 @@ if [ ! -z "$CONFIG_BOOT_RECOVERY_SERIAL" ]; then
 		> "$CONFIG_BOOT_RECOVERY_SERIAL" 2>&1 &
 fi
 
-# load ATA and NVME modules if they exist
+# load ATA, NVME and MMC modules if they exist
 if [ -r /lib/modules/libata.ko ]; then
 	enable_sata
 fi
 
 if [ -r /lib/modules/nvme.ko ]; then
 	enable_nvme
+fi
+
+if [ -r /lib/modules/sdhci.ko ]; then
+	enable_mmc
 fi
 
 # load USB modules for boards using a USB keyboard
@@ -122,6 +134,13 @@ combine_configs
 # evaluate CONFIG_BOOT_DEV in key-value pair format
 bootdev=$(evaluate_boot_device "$CONFIG_BOOT_DEV")
 replace_config /tmp/config "CONFIG_BOOT_DEV" "$bootdev"
+
+if [ "$CONFIG_LDR_DEV" ];then
+	# evaluate CONFIG_LDR_DEV in key-value pair format
+	ldrdev=$(evaluate_boot_device "$CONFIG_LDR_DEV")
+	replace_config /tmp/config "CONFIG_LDR_DEV" "$ldrdev"
+	measure_ldr
+fi
 
 . /tmp/config
 

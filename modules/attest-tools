@@ -1,0 +1,28 @@
+modules-$(CONFIG_ATTEST_TOOLS) += attest-tools
+
+attest-tools_depends := bash tpm2-tools curl vim-xxd
+attest-tools_version := git
+attest-tools_repo := https://github.com/hardenedvault/v-attest
+attest-tools_dir := attest-tools_$(attest-tools_version)
+
+ifeq "$(CONFIG_ATTEST_TOOLS)" "y"
+initrd_bins += $(initrd_tmp_dir)/bin/tpm2-attest
+endif
+
+# We do not need to invoke the Makefile
+attest-tools_target := -q || true
+
+$(initrd_tmp_dir)/bin/tpm2-attest: $(build)/$(attest-tools_dir)/.build
+	install -Dm 755 \
+		$(build)/$(attest-tools_dir)/sbin/tpm2-attest \
+		$(initrd_tmp_dir)/bin/tpm2-attest
+	install -Dm 755 \
+		$(build)/$(attest-tools_dir)/sbin/tpm2-recv \
+		$(initrd_tmp_dir)/bin/tpm2-recv
+	install -Dm 644 \
+		$(build)/$(attest-tools_dir)/functions.sh \
+		$(initrd_tmp_dir)/functions.sh
+	install -Dm 644 \
+		$(build)/$(attest-tools_dir)/env.sh \
+		$(initrd_tmp_dir)/env.sh
+

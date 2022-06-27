@@ -62,6 +62,24 @@ dd \
 	2>/dev/null \
 || die "Unable to generate 128 random bytes"
 
+if [ "$CONFIG_TPM2_TOOLS" = "y" -a "$CONFIG_ATTEST_TOOLS" = "y" ]; then
+	echo "Bring up network for remote attestation"
+	network-init-recovery
+	if [ -r $paramsdir/kexec_attest_server.txt ]; then
+		attest_server=$(cat $paramsdir/kexec_attest_server.txt)
+	fi
+	export attest_server
+	if ! kexec-attest "$KEY_FILE.attest"; then
+		die "Failed to obtain remote attestation key"
+	else
+		# Append attest key after the local key
+		cat "$KEY_FILE" "$KEY_FILE.attest" > "$KEY_FILE.real"
+		shred -n 10 -z -u "$KEY_FILE.attest" 2> /dev/null || true
+	fi
+else
+	cp "$KEY_FILE" "$KEY_FILE.real"
+fi
+
 # Remove all the old keys from slot 1
 for dev in `cat "$KEY_DEVICES" | cut -d\  -f1`; do
 	echo "++++++ $dev: Removing old key slot"
@@ -74,9 +92,11 @@ for dev in `cat "$KEY_DEVICES" | cut -d\  -f1`; do
 	cryptsetup luksAddKey \
 		--key-file "$RECOVERY_KEY" \
 		--key-slot 1 \
-		$dev "$KEY_FILE" \
+		$dev "$KEY_FILE.real" \
 	|| die "$dev: Unable to add key"
 done
+shred -n 10 -z -u "$KEY_FILE.real" 2> /dev/null \
+|| warn "Failed to erase the real FDE key - continuing"
 
 # Now that we have setup the new keys, measure the PCRs
 # We don't care what ends up in PCR 6; we just want
@@ -197,9 +217,11 @@ elif [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
 	if [ $? -eq 0 ]; then
 		# should be okay if this fails
 		shred -n 10 -z -u "$pcrf".* 2> /dev/null || true
-		exit 0
 	fi
 fi
 
 shred -n 10 -z -u "$TPM_SEALED" 2> /dev/null \
 || warn "Failed to delete the sealed secret - continuing"
+
+cp /tmp/luksDump.txt "$paramsdir/kexec_lukshdr_hash.txt" \
+|| warn "Failed to have hashes of LUKS header - continuing"

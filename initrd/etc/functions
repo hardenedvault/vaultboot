@@ -93,6 +93,22 @@ confirm_totp()
 	echo
 }
 
+enable_mmc_core()
+{
+	for mod in mmc_core mmc_block; do
+		if ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
+			insmod "/lib/modules/$mod.ko" \
+				|| die "$mod: Unable to load module"
+		fi
+	done
+	# mfd-core may be linked into kernel on some architecture
+	mod="mfd-core"
+	if [ -r "/lib/modules/$mod.ko" ] && ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
+		insmod "/lib/modules/$mod.ko" \
+			|| die "$mod: Unable to load module"
+	fi
+}
+
 enable_usb()
 {
 	if [ "$CONFIG_LINUX_USB_COMPANION_CONTROLLER" = y ]; then
@@ -134,12 +150,21 @@ enable_usb()
 		fi
 	fi
 
+	if [ -r "/lib/modules/mmc_core.ko" ]; then
+		enable_mmc_core
+		for mod in rtsx_usb rtsx_usb_sdmmc vub300; do
+			if [ -r "/lib/modules/$mod.ko" ] && ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
+				insmod "/lib/modules/$mod.ko" \
+					|| die "$mod: Unable to load module"
+			fi
+		done
+	fi
 }
 
 enable_sata()
 {
 	for mod in libata libahci ahci; do
-		if ! lsmod | grep -q "^$mod " ; then
+		if ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
 			insmod "/lib/modules/$mod.ko" \
 				|| die "$mod: Unable to load module"
 		fi
@@ -153,7 +178,43 @@ enable_sata()
 enable_nvme()
 {
 	for mod in nvme-core nvme; do
-		if ! lsmod | grep -q "^$mod " ; then
+		if ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
+			insmod "/lib/modules/$mod.ko" \
+				|| die "$mod: Unable to load module"
+		fi
+	done
+
+	if [ ! -z "$1" ]; then
+		exec mount "$@"
+	fi
+}
+
+enable_mmc()
+{
+	enable_mmc_core
+	for mod in sdhci cqhci sdhci-acpi sdhci-pci rtsx_pci rtsx_pci_sdmmc; do
+		if ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
+			insmod "/lib/modules/$mod.ko" \
+				|| die "$mod: Unable to load module"
+		fi
+	done
+
+	if [ -r /lib/modules/sdhci-pltfm.ko ]; then
+		for mod in sdhci-pltfm bcm2835 dw_mmc dw_mmc-pltfm dw_mmc-k3 \
+				       dw_mmc-rockchip meson-gx-mmc crc7 crc-itu-t \
+				       of_mmc_spi mmc_spi sdhci-esdhc-imx sdhci_f_sdh30 \
+				       sdhci-iproc sdhci-msm sdhci-of-arasan sdhci-of-esdhc \
+				       sdhci-tegra sdhci-xenon-driver sunxi-mmc; do
+			if ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
+				insmod "/lib/modules/$mod.ko" \
+					|| die "$mod: Unable to load module"
+			fi
+		done
+	fi
+
+	# minor drivers, only loaded while existing
+	for mod in cb710 cb710-mmc tifm_core tifm_sd toshsd via-sdmmc bcm2835-mmc; do
+		if [ -r "/lib/modules/$mod.ko" ] && ! lsmod | grep -q "^$(echo $mod | sed 's/-/_/g') " ; then
 			insmod "/lib/modules/$mod.ko" \
 				|| die "$mod: Unable to load module"
 		fi
@@ -437,4 +498,10 @@ lock_chip() {
 	io386 -o b -b x $APM_CNT $VAULT_LOCK
 	echo "Common locking"
 	io386 -o b -b x $APM_CNT $COMMON_LOCK
+}
+
+measure_ldr() {
+	mkdir -p /mnt/ldr
+	mount -o ro "$CONFIG_LDR_DEV" /mnt/ldr
+	tpmr extend -ix 5 -ic `find /mnt/ldr -type f -exec sha256sum {} \; | sha256sum`
 }

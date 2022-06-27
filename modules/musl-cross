@@ -38,6 +38,7 @@ musl-cross_configure := \
 	/bin/echo -e >> Makefile 'both:' ; \
 	/bin/echo -e >> Makefile '\t$$$$(MAKE) TARGET=x86_64-linux-musl install' ; \
 	/bin/echo -e >> Makefile '\t$$$$(MAKE) TARGET=i386-linux-musl install' ; \
+	/bin/echo -e >> Makefile '\t$$$$(MAKE) TARGET=aarch64-linux-musl install' ; \
 
 CROSS_PATH ?= $(pwd)/crossgcc
 

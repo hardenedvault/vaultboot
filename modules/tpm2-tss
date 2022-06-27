@@ -1,13 +1,14 @@
 # TPM2 TSS library
 modules-$(CONFIG_TPM2_TSS) += tpm2-tss
 
-tpm2-tss_version := 2.4.3
+tpm2-tss_version := 3.2.0
 tpm2-tss_dir := tpm2-tss-$(tpm2-tss_version)
 tpm2-tss_tar := tpm2-tss-$(tpm2-tss_version).tar.gz
 tpm2-tss_url := https://github.com/tpm2-software/tpm2-tss/releases/download/$(tpm2-tss_version)/$(tpm2-tss_tar)
-tpm2-tss_hash := e294677f8993234d0adfa191a5cbf9c5b83cc60c724c233e3d631c26712abea0
+tpm2-tss_hash := 48305e4144dcf6d10f3b25b7bccf0189fd2d1186feafd8cd68c6b17ecf0d7912
 
-tpm2-tss_configure := ./configure \
+tpm2-tss_configure := aclocal && automake --add-missing && autoreconf -fi \
+	&& ./configure \
 	$(CROSS_TOOLS) \
 	--host i386-elf-linux \
 	--prefix "/" \
@@ -31,7 +32,7 @@ tpm2-tss_target := $(MAKE_JOBS) \
 tpm2-tss_libraries := \
 	src/tss2-rc/.libs/libtss2-rc.so.0 \
 	src/tss2-mu/.libs/libtss2-mu.so.0 \
-	src/tss2-sys/.libs/libtss2-sys.so.0 \
+	src/tss2-sys/.libs/libtss2-sys.so.1 \
 	src/tss2-esys/.libs/libtss2-esys.so.0 \
 	src/tss2-tcti/.libs/libtss2-tctildr.so.0 \
 	src/tss2-tcti/.libs/libtss2-tcti-device.so.0 \

@@ -1,0 +1,31 @@
+#!/bin/sh
+# This will unseal and unecncrypt the drive encryption key from the TPM
+# The TOTP secret will be shown to the user on each encryption attempt.
+# It will then need to be bundled into initrd that is booted with Qubes.
+set -e -o pipefail
+
+SECRET_DIR=/tmp/secret
+
+. /etc/functions
+mkdir -p "$SECRET_DIR"
+
+QUOTE_PCRS="0,1,2,3,4,5,6,7"
+
+if [ -n "$attest_server" ]; then
+	mkdir -p "$SECRET_DIR/attest"
+	tpm2-attest attest "http://$attest_server/attest" \
+		| tar -xC "$SECRET_DIR/attest" \
+		|| die "Remote attestation failed!"
+	pcrf="/tmp/secret/pcrf.bin"
+	# pcr 11 is expected to be zero
+	dd if=/dev/zero bs=32 count=1 > "$pcrf"
+	tpm2-recv -f "$SECRET_DIR/attest/rootfs.key.symkeyenc" \
+		  "$1" \
+		  tpm2 policypcr -l "sha256:11" -f "$pcrf" \
+		|| die "Failed to obtain attest key!"
+	echo "Remote attestation passed!"
+	tpmr startsession || die "Failed to restart encrypted session!"
+	# Override PCR 11 so that user can't read the key
+else
+	die "No attestation server configured!"
+fi

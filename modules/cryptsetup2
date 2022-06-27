@@ -2,11 +2,11 @@ modules-$(CONFIG_CRYPTSETUP2) += cryptsetup2
 
 cryptsetup2_depends := util-linux popt lvm2 json-c $(musl_dep)
 
-cryptsetup2_version := 2.3.3
+cryptsetup2_version := 2.4.3
 cryptsetup2_dir := cryptsetup-$(cryptsetup2_version)
 cryptsetup2_tar := cryptsetup-$(cryptsetup2_version).tar.xz
-cryptsetup2_url := https://www.kernel.org/pub/linux/utils/cryptsetup/v2.3/cryptsetup-$(cryptsetup2_version).tar.xz
-cryptsetup2_hash := 3bca4ffe39e2f94cef50f6ea65acb873a6dbce5db34fc6bcefe38b6d095e82df
+cryptsetup2_url := https://www.kernel.org/pub/linux/utils/cryptsetup/v2.4/cryptsetup-$(cryptsetup2_version).tar.xz
+cryptsetup2_hash := fc0df945188172264ec5bf1d0bda08264fadc8a3f856d47eba91f31fe354b507
 
 # Use an empty prefix so that the executables will not include the
 # build path.
@@ -16,6 +16,7 @@ cryptsetup2_configure := ./configure \
 	--prefix "/" \
 	--disable-rpath \
 	--disable-gcrypt-pbkdf2 \
+	--disable-ssh-token \
 	--enable-cryptsetup-reencrypt \
 	--with-crypto_backend=kernel \
 	--with-tmpfilesdir=$(INSTALL)/lib/tmpfiles.d

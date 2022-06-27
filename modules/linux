@@ -20,7 +20,14 @@ linux_hash := a8b31d716b397303a183e42ad525ff2871024a43e3ea530d0fdf73b7f9d27da7
 else ifeq "$(CONFIG_LINUX_VERSION)" "5.10.5"
 linux_version := 5.10.5
 linux_hash := 3991a9e16a187d78d5f414d89236ae5d7f404a69e60c4c42a9d262ee19612ef4
+else ifeq "$(CONFIG_LINUX_VERSION)" "5.15.45"
+linux_version := 5.15.45
+linux_hash := b2390d7d977c66036ef0ceb294e408f2bdaab6dfeeb8ff4f4e0a84b71f8d8754
+else ifeq "$(CONFIG_LINUX_VERSION)" "1.20220331"
+linux_version := 1.20220331
+linux_hash := a31f481905f0b43427c20afcc237914ce346c3c3404d5fc1af0cc7ecc5d90cbd
 else
+
 $(error "$(BOARD): does not specify linux kernel version under CONFIG_LINUX_VERSION")
 endif 
 
@@ -34,13 +41,27 @@ linux_kconfig := $(or $(CONFIG_LINUX_CONFIG),config/linux.config)
 # Output directory for the Linux kernel build is based on the
 # configuration file name, not the board name
 linux_dir := $(linux_base_dir)/$(notdir $(basename $(linux_kconfig)))
-
-linux_tar := linux-$(linux_version).tar.xz
 linux_major_ver := $(basename $(basename $(CONFIG_LINUX_VERSION)))
+ifeq "$(CONFIG_LINUX_VERSION)" "1.20220331"
+linux_tar := linux-$(linux_version).tar.gz
+linux_url := https://github.com/raspberrypi/linux/tarball/$(linux_version)
+else
+linux_tar := linux-$(linux_version).tar.xz
 linux_url := https://cdn.kernel.org/pub/linux/kernel/v$(linux_major_ver).x/$(linux_tar)
+endif
 
 # Ensure that touching the config file will force a reconfig/rebuild
 $(build)/$(linux_dir)/.configured: $(linux_kconfig)
+
+ifeq "$(strip $(arch))" "x86_64"
+linux_arch := x86
+linux_output += arch/$(linux_arch)/boot/bzImage
+else
+ifeq "$(strip $(arch))" "aarch64"
+linux_arch := arm64
+linux_output += arch/$(linux_arch)/boot/Image.gz
+endif
+endif
 
 linux_configure := \
 	mkdir -p "$(build)/$(linux_dir)" \
@@ -48,9 +69,8 @@ linux_configure := \
 	&& $(MAKE) -C .. \
 		CROSS_COMPILE="$(CROSS)" \
 		O="$(build)/$(linux_dir)" \
+		ARCH=$(linux_arch) \
 		olddefconfig \
-
-linux_output += arch/x86/boot/bzImage
 
 # Once we have extracted the kernel tar file, install the headers
 # so that other submodules can make use of them.
@@ -60,8 +80,8 @@ $(INSTALL)/include/linux/limits.h: $(build)/$(linux_base_dir)/.canary
 		INSTALL_HDR_PATH="$(INSTALL)" \
 		O="$(linux_dir)" \
 		KCONFIG_CONFIG="$(pwd)/$(linux_kconfig)" \
+		ARCH=$(linux_arch) \
 		headers_install
-
 
 # qemu
 linux_modules-$(CONFIG_LINUX_E1000)	+= drivers/net/ethernet/intel/e1000/e1000.ko
@@ -116,6 +136,55 @@ linux_modules-$(CONFIG_LINUX_NVME)	+= drivers/nvme/host/nvme-core.ko
 linux_modules-$(CONFIG_LINUX_MEI)	+= drivers/misc/mei/mei.ko
 linux_modules-$(CONFIG_LINUX_MEI)	+= drivers/misc/mei/mei-me.ko
 
+# MMC/sdard support through sdhci rtsx_pci_sdmmc and rtsx_usb_sdmmc support
+# Common MMC
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/core/mmc_core.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/core/mmc_block.ko
+# SDHCI
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/host/sdhci.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/host/cqhci.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/host/sdhci-acpi.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/host/sdhci-pci.ko
+# RTSX
+ifneq "$(linux_arch)" "arm64"
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mfd/mfd-core.ko
+endif
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/misc/cardreader/rtsx_pci.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/host/rtsx_pci_sdmmc.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/misc/cardreader/rtsx_usb.ko
+linux_modules-$(CONFIG_LINUX_MMC) += drivers/mmc/host/rtsx_usb_sdmmc.ko
+# minor drivers
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/misc/cb710/cb710.ko
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/mmc/host/cb710-mmc.ko
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/misc/tifm_core.ko
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/mmc/host/tifm_sd.ko
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/mmc/host/toshsd.ko
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/mmc/host/via-sdmmc.ko
+linux_modules-$(CONFIG_LINUX_MMC_MINOR) += drivers/mmc/host/vub300.ko
+
+# Support for sdhci on non-enumerable buses for aarch64
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-pltfm.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/bcm2835.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/dw_mmc.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/dw_mmc-pltfm.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/dw_mmc-k3.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/dw_mmc-rockchip.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/meson-gx-mmc.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/meson-gx-mmc.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += lib/crc7.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += lib/crc-itu-t.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/mmc_spi.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/of_mmc_spi.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-esdhc-imx.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci_f_sdh30.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-iproc.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-msm.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-of-arasan.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-of-esdhc.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-tegra.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sdhci-xenon-driver.ko
+linux_modules-$(CONFIG_LINUX_MMC_AARCH64) += drivers/mmc/host/sunxi-mmc.ko
+
 EXTRA_FLAGS := -fdebug-prefix-map=$(pwd)=heads -gno-record-gcc-switches
 
 ifeq "$(CONFIG_LINUX_VERSION)" "4.14.62"
@@ -132,6 +201,7 @@ linux_target := \
 	KBUILD_BUILD_HOST=linuxboot \
 	KBUILD_BUILD_TIMESTAMP="1970-00-00" \
 	KBUILD_BUILD_VERSION=0 \
+	ARCH=$(linux_arch) \
 	$(MAKE_JOBS) \
 
 # We cross compile linux now
@@ -198,6 +268,7 @@ linux.menuconfig:
 	$(MAKE) \
 		-C "$(build)/$(linux_base_dir)" \
 		O="$(build)/$(linux_dir)" \
+		ARCH=$(linux_arch) \
 		menuconfig \
 
 # The config file in the repo is stored as a "defconfig" format
@@ -206,5 +277,6 @@ linux.saveconfig:
 	$(MAKE) \
 		-C "$(build)/$(linux_base_dir)" \
 		O="$(build)/$(linux_dir)" \
+		ARCH=$(linux_arch) \
 		savedefconfig
 	mv "$(build)/$(linux_dir)/defconfig" "$(pwd)/$(linux_kconfig)"

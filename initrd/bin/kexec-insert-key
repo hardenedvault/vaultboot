@@ -55,6 +55,21 @@ unseal_failed="n"
 if ! kexec-unseal-key "$INITRD_DIR/secret.key" ; then
 	unseal_failed="y"
 	echo "!!! Failed to unseal the TPM LUKS disk key"
+elif [ "$CONFIG_ATTEST_TOOLS" = "y" ]; then
+	if [ -r $bootdir/kexec_attest_server.txt ]; then
+		attest_server=$(cat $bootdir/kexec_attest_server.txt)
+	fi
+	export attest_server
+	if ! kexec-attest "$INITRD_DIR/attest.key"; then
+		unseal_failed="y"
+		echo "!!! Failed to obtain remote attestation key"
+	else
+		tpmr extend -ix 11 -ic generic \
+			|| die 'Unable to scramble PCR 11'
+		# Append attest key after the local key
+		cat "$INITRD_DIR/attest.key" >> "$INITRD_DIR/secret.key"
+		shred -n 10 -z -u "$INITRD_DIR/attest.key" 2> /dev/null || true
+	fi
 fi
 
 # Override PCR 4 so that user can't read the key
@@ -63,6 +78,8 @@ tpmr extend -ix 4 -ic generic \
 
 # Check to continue
 if [ "$unseal_failed" = "y" ]; then
+	diff "$(dirname $INITRD)/kexec_lukshdr_hash.txt" /tmp/luksDump.txt \
+		&& echo "Headers of LUKSes to be unlocked via TPM do not change."
 	confirm_boot="n"
 	read \
 		-n 1 \

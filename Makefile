@@ -32,7 +32,7 @@ log_dir		:= $(build)/log
 
 # Controls how many parallel jobs are invoked in subshells
 CPUS		?= $(shell nproc)
-#MAKE_JOBS	?= -j$(CPUS) --max-load 16
+MAKE_JOBS	?= -j$(CPUS) --max-load 16
 
 # Create the log directory if it doesn't already exist
 BUILD_LOG := $(shell mkdir -p "$(log_dir)" )
@@ -48,6 +48,7 @@ ifneq "" "$(filter $(make_version)%,$(LOCAL_MAKE_VERSION))"
 
 # Timestamps should be in ISO format
 DATE=`date --rfc-3339=seconds`
+BUILD_TIME:=`date -u +"%F %T"`
 
 # This is the correct version of Make
 
@@ -58,6 +59,7 @@ LOCAL_GAWK_MAJOR_VERSION := $(patsubst .%,.,$(LOCAL_GAWK_VERSION))
 include modules/gawk
 
 # Wrong version
+ifneq "$(HEADS_GAWK)" "$(build)/$(gawk_dir)/gawk"
 ifeq "" "$(filter $(LOCAL_GAWK_MAJOR_VERSION).%,$(gawk_version))"
 # Wrong gawk version detected -- build our local version
 # and re-invoke the Makefile with it instead.
@@ -65,9 +67,9 @@ $(eval $(shell echo >&2 "$(DATE) Wrong gawk detected: $(LOCAL_GAWK_VERSION)"))
 HEADS_GAWK := $(build)/$(gawk_dir)/gawk
 
 # Once we have a suitable version of gawk, we can rerun make
-all linux cpio run: $(HEADS_GAWK)
+all linux cpio run payload musl-cross: $(HEADS_GAWK)
 	LANG=C HEADS_GAWK=$(HEADS_GAWK) $(MAKE) $(MAKE_JOBS) $@
-%.clean %.vol %.menuconfig: $(HEADS_GAWK)
+%.clean %.vol %.menuconfig %.saveconfig: $(HEADS_GAWK)
 	LANG=C HEADS_GAWK=$(HEADS_GAWK) $(MAKE) $@
 
 bootstrap: $(HEADS_GAWK)
@@ -101,6 +103,7 @@ $(HEADS_GAWK): $(build)/$(gawk_dir)/.configured
 		| tee "$(log_dir)/gawk.log" \
 		$(VERBOSE_REDIRECT)
 endif
+else
 
 
 BOARD		?= qemu-coreboot
@@ -168,6 +171,8 @@ SHELL := /bin/bash
 include modules/musl-cross
 
 musl_dep	:= musl-cross
+target		:= $(shell echo $(CROSS) | grep -Eoe '([^/]*?)-linux-musl')
+arch		:= $(subst -linux-musl, , $(target))
 heads_cc	:= $(CROSS)gcc \
 	-fdebug-prefix-map=$(pwd)=heads \
 	-gno-record-gcc-switches \
@@ -193,7 +198,9 @@ CROSS_TOOLS := \
 	CC="$(heads_cc)" \
 	$(CROSS_TOOLS_NOCC) \
 
-
+# Targets to build payload only
+.PHONY: payload
+payload: $(build)/$(BOARD)/bzImage $(build)/$(initrd_dir)/initrd.cpio.xz
 
 ifeq ($(CONFIG_COREBOOT), y)
 
@@ -205,10 +212,11 @@ endif
 else ifeq ($(CONFIG_LINUXBOOT), y)
 all: $(build)/$(BOARD)/$(LB_OUTPUT_FILE)
 else
-$(error "$(BOARD): neither CONFIG_COREBOOT nor CONFIG_LINUXBOOT is set?")
+$(info "$(BOARD): neither CONFIG_COREBOOT nor CONFIG_LINUXBOOT is set, only build linux kernel and initrd.")
+all: $(build)/$(BOARD)/bzImage $(build)/$(initrd_dir)/initrd.cpio.xz
 endif
 
-all:
+all payload:
 	@sha256sum $< | tee -a "$(HASHES)"
 
 # Disable all built in rules
@@ -508,6 +516,10 @@ bin_modules-$(CONFIG_NKSTORECLI) += nkstorecli
 bin_modules-$(CONFIG_OPENSSL) += openssl
 bin_modules-$(CONFIG_TPM2_TOOLS) += tpm2-tools
 bin_modules-$(CONFIG_IO386) += io386
+bin_modules-$(CONFIG_CURL) += curl
+bin_modules-$(CONFIG_ATTEST_TOOLS) += attest-tools
+bin_modules-$(CONFIG_BASH) += bash
+bin_modules-$(CONFIG_VIM_XXD) += vim-xxd
 
 $(foreach m, $(bin_modules-y), \
 	$(call map,initrd_bin_add,$(call bins,$m)) \
@@ -627,6 +639,8 @@ $(initrd_tmp_dir)/etc/config: FORCE
 		>> $@ ; \
 		echo export CONFIG_BOARD=$(BOARD) \
 		>> $@ ; \
+		echo export BUILD_TIME=\'$(BUILD_TIME)\' \
+		>> $@ ; \
 	)
 
 # Ensure that the initrd depends on all of the modules that produce
@@ -659,7 +673,7 @@ real.clean:
 	done
 	cd install && rm -rf -- *
 
-
+endif
 else
 # Wrong make version detected -- build our local version
 # and re-invoke the Makefile with it instead.
@@ -667,9 +681,9 @@ $(eval $(shell echo >&2 "$(DATE) Wrong make detected: $(LOCAL_MAKE_VERSION)"))
 HEADS_MAKE := $(build)/$(make_dir)/make
 
 # Once we have a proper Make, we can just pass arguments into it
-all linux cpio run: $(HEADS_MAKE)
+all linux cpio run payload musl-cross: $(HEADS_MAKE)
 	LANG=C MAKE=$(HEADS_MAKE) $(HEADS_MAKE) $(MAKE_JOBS) $@
-%.clean %.vol %.menuconfig: $(HEADS_MAKE)
+%.clean %.vol %.menuconfig %.saveconfig: $(HEADS_MAKE)
 	LANG=C MAKE=$(HEADS_MAKE) $(HEADS_MAKE) $@
 
 bootstrap: $(HEADS_MAKE)
