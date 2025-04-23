@@ -11,9 +11,12 @@ libusb-compat_tar := libusb-compat-$(libusb-compat_version).tar.bz2
 libusb-compat_url := https://downloads.sourceforge.net/project/libusb/libusb-compat-0.1/libusb-compat-$(libusb-compat_version)/$(libusb-compat_tar)
 libusb-compat_hash := 404ef4b6b324be79ac1bfb3d839eac860fbc929e6acb1ef88793a6ea328bc55a
 
-libusb-compat_configure := ./configure \
+libusb-compat_configure := \
+	CFLAGS="-Os" \
+	./configure \
 	$(CROSS_TOOLS) \
-	--host i386-elf-linux \
+	--host $(host) \
+	--target $(target) \
 	--prefix "/" \
 	PKG_CONFIG=/bin/false \
 	LIBUSB_1_0_CFLAGS="-I$(INSTALL)/include/libusb-1.0" \

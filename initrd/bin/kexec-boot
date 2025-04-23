@@ -77,6 +77,11 @@ do
 		else
 			kexeccmd="$kexeccmd -l $filepath"
 		fi
+		if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ] \
+			   && [ "$CONFIG_MEASURE_KERNEL" = "y" -a "$dryrun" != "y" ]; then
+			# Measure the kernel into PCR 7, permit failure.
+			tpmr extend -ix 7 -if "$filepath" || true
+		fi
 	fi
 	if [ "$key" = "module" ]; then
 		fix_file_path
@@ -96,6 +101,13 @@ do
 		fi
 		module_number=`expr $module_number + 1`
 		kexeccmd="$kexeccmd --module \"$filepath $cmdline\""
+		if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ] \
+			   && [ "$CONFIG_MEASURE_KERNEL" = "y" -a "$dryrun" != "y" ]; then
+			# Measure the module into PCR 9, permit failure.
+			tpmr extend -ix 9 -if "$filepath" || true
+			# Measure the cmd line into PCR 8, permit failure.
+			tpmr extend -ix 8 -ic "$cmdline" || true
+		fi
 	fi
 	if [ "$key" = "initrd" ]; then
 		fix_file_path
@@ -107,11 +119,21 @@ do
 			filepath="$override_initrd"
 		fi
 		kexeccmd="$kexeccmd --initrd=$filepath"
+		if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ] \
+			   && [ "$CONFIG_MEASURE_KERNEL" = "y" -a "$dryrun" != "y" ]; then
+			# Measure the initrd into PCR 9, permit failure.
+			tpmr extend -ix 9 -if "$filepath" || true
+		fi
 	fi
 	if [ "$key" = "append" ]; then
 		cmdline="$firstval $restval"
 		adjust_cmd_line
 		kexeccmd="$kexeccmd --append=\"$cmdline\""
+		if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ] \
+			   && [ "$CONFIG_MEASURE_KERNEL" = "y" -a "$dryrun" != "y" ]; then
+			# Measure the cmd line into PCR 8, permit failure.
+			tpmr extend -ix 8 -ic "$cmdline" || true
+		fi
 	fi
 done << EOF
 $kexecparams
@@ -120,6 +142,11 @@ EOF
 if [ "$adjusted_cmd_line" = "n" ]; then
 	if [ "$kexectype" = "elf" ]; then
 		kexeccmd="$kexeccmd --append=\"$cmdadd\""
+		if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ] \
+			   && [ "$CONFIG_MEASURE_KERNEL" = "y" -a "$dryrun" != "y" ]; then
+			# Measure the cmd line into PCR 8, permit failure.
+			tpmr extend -ix 8 -ic "$cmdadd" || true
+		fi
 	else
 		die "Failed to add required kernel commands: $cmdadd"
 	fi
@@ -133,11 +160,19 @@ eval "$kexeccmd" \
 || die "Failed to load the new kernel"
 
 if [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
+	# Flush sessions and transient objects
+	tpm2 flushcontext -Q --transient-object \
+		|| warn "tpm2_flushcontext: unable to flush transient handles"
+	tpm2 flushcontext -Q --loaded-session \
+		|| warn "tpm2_flushcontext: unable to flush sessions"
+	tpm2 flushcontext -Q --saved-session \
+		|| warn "tpm2_flushcontext: unable to flush saved session"
+
 	# Add a random passphrase to platform hierarchy to prevent TPM2 from
 	# being cleared in the OS.
 	# This passphrase is only effective before the next boot.
 	echo "Locking platform hierarchy..."
-	randpass=$(dd if=/dev/urandom bs=4 count=1 | xxd -p)
+	randpass=$(dd if=/dev/urandom bs=4 count=1 | xxd -pc4)
 	tpm2 changeauth -c platform "$randpass" \
 		|| warn "Failed to lock platform hierarchy of TPM2!"
 fi

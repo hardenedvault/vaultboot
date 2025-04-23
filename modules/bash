@@ -1,25 +1,29 @@
 # GNU bash
 modules-$(CONFIG_BASH) += bash
 
-bash_version := 5.1.16
+bash_version := 5.2.37
 bash_dir := bash-$(bash_version)
 bash_tar := bash-$(bash_version).tar.gz
 bash_url := https://ftpmirror.gnu.org/bash/$(bash_tar)
-bash_hash := 5bac17218d3911834520dad13cd1f85ab944e1c09ae1aba55906be1f8192f558
+bash_hash := 9599b22ecd1d5787ad7d3b7bf0c59f312b3396d1e281175dd1f8a4014da621ff
 
-bash_configure := ./configure \
+# --enable-debugger: Enables BASH_SOURCE tracing through functions as well as
+# BASH_ARGV/BASH_ARGC.  (Otherwise BASH_SOURCE[0] is empty when calling a
+# function, it's only set in top level script code.)
+bash_configure := CFLAGS="-g0 -Os" LDFLAGS="-s" ./configure \
 	$(CROSS_TOOLS) \
 	--host $(target) \
 	--prefix="/usr" \
-        --enable-largefile \
-        --infodir=/usr/share/info \
-        --mandir=/usr/share/man \
-        --without-bash-malloc \
+	--infodir=/usr/share/info \
+	--mandir=/usr/share/man \
 	--disable-coprocesses \
-	--disable-debugger \
 	--disable-net-redirections \
-	--enable-single-help-strings \
 	--disable-nls \
+	--enable-debugger \
+	--enable-largefile \
+	--enable-readline \
+	--enable-single-help-strings \
+	--without-bash-malloc
 
 bash_target := $(MAKE_JOBS) \
 	&& $(MAKE) -C $(build)/$(bash_dir) \
@@ -37,4 +41,5 @@ $(initrd_tmp_dir)/bin/bash: $(build)/$(bash_dir)/bash $(initrd_tmp_dir)/bin/busy
 	install -Dm 755 "$<" "$@"
 	$(CROSS)strip --preserve-dates "$@" 2>&-
 
+# Force bash built after busybox
 bash_depends := $(musl_dep) busybox

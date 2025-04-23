@@ -17,9 +17,12 @@ gpg_hash := 6b47a3100c857dcab3c60e6152e56a997f2c7862c1b8b2b25adf3884a1ae2276
 # Force a different host/build setting so that it detects a cross compile.
 # Otherwise it wil try to run tests.
 #
-gpg_configure := ./configure \
+gpg_configure := \
+	CFLAGS="-Os"  \
 	$(CROSS_TOOLS) \
-	--host $(target) \
+	./configure \
+	--host $(host) \
+	--target $(target) \
 	--with-libusb="$(INSTALL)" \
 	--prefix "/" \
 	--enable-card-support \

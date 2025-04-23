@@ -1,4 +1,4 @@
-modules-$(CONFIG_MBEDTLS) += mbedtls
+modules-$(CONFIG_TPMTOTP) += mbedtls
 
 mbedtls_version := 2.4.2
 mbedtls_dir := mbedtls-$(mbedtls_version)
@@ -12,6 +12,7 @@ mbedtls_configure :=
 
 mbedtls_target := \
 	SHARED=1 \
+	CFLAGS="-Os"  \
 	DESTDIR=$(INSTALL) \
 	$(CROSS_TOOLS) \
 	$(MAKE_JOBS) \

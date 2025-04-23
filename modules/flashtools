@@ -10,7 +10,8 @@ flashtools_hash := dca7f4fd129509bdcbf5e4646905d6dd82e91061d7faf62bbe7193c31bb7c
 
 flashtools_target := \
 	$(CROSS_TOOLS) \
-	CFLAGS="-I$(INSTALL)/include" \
+	$(MAKE_JOBS) \
+	CFLAGS="-Os -I$(INSTALL)/include" \
 	LDFLAGS="-L$(INSTALL)/lib" \
 
 flashtools_output := \

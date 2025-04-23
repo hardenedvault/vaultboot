@@ -26,6 +26,12 @@ linux_hash := b2390d7d977c66036ef0ceb294e408f2bdaab6dfeeb8ff4f4e0a84b71f8d8754
 else ifeq "$(CONFIG_LINUX_VERSION)" "1.20220331"
 linux_version := 1.20220331
 linux_hash := a31f481905f0b43427c20afcc237914ce346c3c3404d5fc1af0cc7ecc5d90cbd
+else ifeq "$(CONFIG_LINUX_VERSION)" "5.10.214"
+linux_version := 5.10.214
+linux_hash := 40f014d53e81f204f6d2a364aae4201ae07970dd1b70dc602d7c66c1a140f558
+else ifeq "$(CONFIG_LINUX_VERSION)" "6.1.8"
+linux_version := 6.1.8
+linux_hash := b60bb53ab8ba370a270454b11e93d41af29126fc72bd6ede517673e2e57b816d
 else
 
 $(error "$(BOARD): does not specify linux kernel version under CONFIG_LINUX_VERSION")
@@ -262,8 +268,43 @@ $(build)/$(BOARD)/$(LINUX_IMAGE_FILE).bundled: \
 	@touch $@ # force a timestamp update
 	@sha256sum "$@" | tee -a "$(HASHES)"
 
+# modifydefconfig target allows us edit current in tree defconfig config
+# under linux decompressed+patched directory and put it back in git tree 
+# to check changes with git difftool 
+# useful for development cycle of linux kernel version bumps.
+linux.modifydefconfig:
+	cp "$(pwd)/$(linux_kconfig)" "$(build)/$(linux_dir)/.config" && \
+	$(MAKE) \
+		-C "$(build)/$(linux_base_dir)" \
+		O="$(build)/$(linux_dir)" \
+		menuconfig && \
+	$(MAKE) \
+		-C "$(build)/$(linux_base_dir)" \
+		O="$(build)/$(linux_dir)" \
+		savedefconfig && \
+	mv "$(build)/$(linux_dir)/defconfig" "$(pwd)/$(linux_kconfig)"
+
+# generateoldconfig target allows us to copy current in git tree defconfig
+# into decompressed linux directory's .config file. This permits
+# us to edit that .config file and remove unneeded stuff prior
+# of calling saveconfig target from heads main directory (cd -)
+linux.generateoldconfig:
+	mkdir -p "$(build)/$(linux_dir)" \
+	&& cp "$(pwd)/$(linux_kconfig)" "$(build)/$(linux_dir)/.config" \
+	&& $(MAKE) -C "$(build)/$(linux_base_dir)" \
+		O="$(build)/$(linux_dir)" \
+		olddefconfig \
+	&& echo "" \
+	&& echo "You can now edit $(build)/$(linux_dir)/.config" \
+	&& echo "Either:" \
+	&& echo " Manually through text editor" \
+	&& echo " Through make BOARD=XYZ linux.menuconfig" \
+	&& echo "" \
+	&& echo "To save chances in git tree for review, type:" \
+	&& echo "make BOARD=XYZ linux.saveconfig" 
+
 # menuconfig target allows us to easily reconfigure this Linux kernel
-# Afterwars make linux.saveconfig to generate a minimal config from it
+# Afterwards make linux.saveconfig to generate a minimal config from it
 linux.menuconfig:
 	$(MAKE) \
 		-C "$(build)/$(linux_base_dir)" \

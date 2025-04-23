@@ -69,7 +69,6 @@ for tries in 1 2 3; do
 	if sha256sum $param_files | gpg \
 		--digest-algo SHA256 \
 		--detach-sign \
-		-a \
 		> $paramsdir/kexec.sig \
 	; then
 		# successful - update the validated params

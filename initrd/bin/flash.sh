@@ -6,6 +6,8 @@ set -e -o pipefail
 . /etc/functions
 . /tmp/config
 
+echo
+
 case "$CONFIG_FLASHROM_OPTIONS" in
   -* )
     echo "Board $CONFIG_BOARD detected, continuing..."
@@ -16,47 +18,43 @@ case "$CONFIG_FLASHROM_OPTIONS" in
 esac
 
 flashrom_progress() {
+    # The ichspi programmer now spews register status lines constantly that are brutally slow
+    # to feed through the parser in flashrom_progress_tokenize.  Exclude them.
+    # flashrom_progress_tokenize operates on individual tokens (not lines), so it splits by
+    # spaces in 'read'.  But we also need to separate the last word on a line from the next
+    # line, so replace newlines.
+    grep -v -e '^HSFS:' -e '^HSFC:' | tr '\n' ' ' | flashrom_progress_tokenize "$1"
+}
+
+print_flashing_progress() {
+    local spaces='                                                  '
+    local hashes='##################################################'
+    local percent pct1 pct2 progressbar progressbar2
+    percent="$1"
+    pct1=$((percent / 2))
+    pct2=$((50 - percent / 2))
+    progressbar=${hashes:0:$pct1}
+    progressbar2=${spaces:0:$pct2}
+    echo -ne "Flashing: [${progressbar}${spin:$spin_idx:1}${progressbar2}] (${percent}%)\\r"
+}
+
+flashrom_progress_tokenize() {
     local current=0
-    local total_bytes=0
+    local total_bytes="$1"
     local percent=0
     local IN=''
     local spin='-\|/'
     local spin_idx=0
-    local progressbar=''
-    local progressbar2=''
     local status='init'
     local prev_word=''
     local prev_prev_word=''
 
-    progressbar2=$(for i in `seq 48` ; do echo -ne ' ' ; done)
-    echo -e "\nInitializing internal Flash Programmer"
+    echo "Initializing Flash Programmer"
     while true ; do
         prev_prev_word=$prev_word
         prev_word=$IN
-        read -r -d' ' IN || break
-        if [ "$total_bytes" != "0" ]; then
-            current=$(echo "$IN" | grep -E -o '0x[0-9a-f]+-0x[0-9a-f]+:.*' | grep -E -o "0x[0-9a-f]+" | tail -n 1)
-            if [ "${current}" != "" ]; then
-                percent=$((100 * (current + 1) / total_bytes))
-                pct1=$((percent / 2))
-                pct2=$((49 - percent / 2))
-                progressbar=$(for i in `seq $pct1 2>/dev/null` ; do echo -ne '#' ; done)
-                progressbar2=$(for i in `seq $pct2 2>/dev/null` ; do echo -ne ' ' ; done)
-            fi
-        else
-            if [ "$prev_prev_word"  == "Reading" ] && [ "$IN" == "bytes" ]; then
-                # flashrom may read the descriptor first, so ensure total_bytes is at least 4MB
-                if [[ $prev_word -gt  4194303 ]]; then
-                    total_bytes=$prev_word
-                    echo "Total flash size : $total_bytes bytes"
-                fi
-            fi
-        fi
-        if [ "$percent" -gt 99 ]; then
-            spin_idx=4
-        else
-            spin_idx=$(( (spin_idx+1) %4 ))
-        fi
+        read -r -d" " -t 0.2 IN
+        spin_idx=$(( (spin_idx+1) %4 ))
         if [ "$status" == "init" ]; then
             if [ "$IN" == "contents..." ]; then
                 status="reading"
@@ -66,18 +64,33 @@ flashrom_progress() {
         if [ "$status" == "reading" ]; then
             if echo "${IN}" | grep "done." > /dev/null ; then
                 status="writing"
+                IN=
             fi
         fi
         if [ "$status" == "writing" ]; then
-            echo -ne "Flashing: [${progressbar}${spin:$spin_idx:1}${progressbar2}] (${percent}%)\\r"
-            if echo "$IN" | grep "Verifying" > /dev/null ; then
+            # walk_eraseblocks() prints info for each block, of the form
+            # , 0xAAAAAA-0xBBBBBB:X
+            # The 'X' is a char indicating the action, but the debug from actually erasing
+            # and writing is mixed into the output so it may be separated.  It can also be
+            # interrupted occasionally, so only match a complete token.
+            current=$(echo "$IN" | sed -nE 's/^0x[0-9a-f]+-(0x[0-9a-f]+):.*$/\1/p')
+            if [ "$current" != "" ]; then
+                percent=$((100 * (current + 1) / total_bytes))
+            fi
+            print_flashing_progress "$percent"
+            if [ "$IN" == "done." ]; then
                 status="verifying"
+                IN=
+                print_flashing_progress 100
                 echo ""
                 echo "Verifying flash contents. Please wait..."
             fi
-            if echo "$IN" | grep "identical" > /dev/null ; then
+            # This appears before "Erase/write done."; skip the verifying state
+            if [ "$IN" == "identical" ]; then
                 status="done"
-		        echo ""
+                IN=
+                print_flashing_progress 100
+                echo ""
                 echo "The flash contents are identical to the image being flashed."
             fi
         fi
@@ -136,7 +149,8 @@ flash_rom() {
     fi
 
     flashrom $CONFIG_FLASHROM_OPTIONS -w /tmp/${CONFIG_BOARD}.rom \
-      -V -o "/tmp/flashrom-$(date '+%Y%m%d-%H%M%S').log" 2>&1 | flashrom_progress \
+      -V -o "/tmp/flashrom-$(date '+%Y%m%d-%H%M%S').log" 2>&1 | \
+      flashrom_progress "$(stat -c %s "/tmp/${CONFIG_BOARD}.rom")" \
       || die "$ROM: Flash failed"
   fi
 }

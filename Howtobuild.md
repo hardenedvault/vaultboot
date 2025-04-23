@@ -12,7 +12,7 @@ The top level config of Vaultboot is a "board" config, which lies on `boards/${b
 
 Most buildtime options are defined in the main Makefile and module definitions under `modules` subdir, and runtime options are defined in shell scripts under `initrd`. Their role could be learned from these code.
 
-Currently there are 3 generic "board" configs for x86_64 architecture: qemu-hvault-tpm2, qemu-hvault-generic, and qemu-hvault-legacy, which supports tpm2, tpm1 and no tpm, respectively. coreboot images for qemu will be built if you choose to build coreboot firmware for them.
+Currently there are 3 generic "board" configs for x86_64 architecture: qemu-hvault-tpm2, qemu-hvault-generic, and qemu-hvault-legacy, which supports tpm2, tpm1 and no tpm, respectively. Despite their name, their resulted payload has no problem running on real mainboards. coreboot images for qemu will be built if you choose to build coreboot firmware for them.
 
 USB stack will not be loaded by default. If you need to use USB keyboards, add a runtime option `export CONFIG_USB_KEYBOARD=y` to your "board" config.
 
@@ -26,7 +26,7 @@ $ make BOARD=${boardname} CROSS=${cross_toolchain_prefix} linux.menuconfig
 ```
 After this, invoking
 ```
-$ make BOARD=${boardname} CROSS=${cross_toolchain_prefix} linux.menuconfig
+$ make BOARD=${boardname} CROSS=${cross_toolchain_prefix} linux.saveconfig
 ```
 will save your changes to the Linux config file referenced by the "board" config.
 
@@ -61,6 +61,13 @@ $ make BOARD=${boardname} CROSS=${cross_toolchain_prefix} real.clean
 
 otherwise remaining object files may be erronously linked against, and ruin the build process. If you are going to build for another board with the same architecture, real.clean is not necessary.
 
+"grub-wrapped payloads" mentioned in `Handle-FB.md` can be build with
+
+```
+$ make BOARD=${boardname} CROSS=${cross_toolchain_prefix} gwpl
+```
+and the result will appear as `build/${boardname}/gwpl.elf`.
+
 ## Integrate Vaultboot payload to coreboot
 Copy or symlink resulted bzImage and initrd.cpio.xz into a directory convenient for the coreboot repository, and config coreboot with menuconfig, nconfig, etc:
 
@@ -69,3 +76,5 @@ $ make menuconfig
 ```
 
 Step into "Payload" submenu, choose "A Linux payload" in "Add a payload" (Kconfig option `PAYLOAD_LINUX=y`), type the path to bzImage to "Linux path and filename" (Kconfig option `PAYLOAD_FILE`), type the path to initrd.cpio.xz to "Linux initrd" (Kconfig option `LINUX_INITRD`).
+
+A "grub-wrapped payload" could be added as "An ELF executable payload" (Kconfig option `PAYLOAD_ELF=y`), type the path to gwpl file to "Payload path and filename" (Kconfig option `PAYLOAD_FILE`). To make full use of gwpl, the coreboot had better be configured to use "Linear 'high-resolution' framebuffer" (in submenu Devices/Display/"Framebuffer mode", corresponding to Kconfig option `GENERIC_LINEAR_FRAMEBUFFER=y` and `VGA_TEXT_FRAMEBUFFER` disabled).

@@ -21,6 +21,8 @@ Check the detail in [FEATURES](https://github.com/hardenedvault/vaultboot/blob/m
 |Parameter Encryption| YES   | YES    |
 |[Remote attestation](https://github.com/hardenedvault/vaultboot/blob/master/Attest-fde.md)| YES   | YES    |
 
+Contrast to tpm1, tpm2-tools does not support sealing that requires both PCRs and password being correct to unseal, so when using tpm2, openssl executable is used to handle the passphrase.
+
 ## How to build VaultBoot
 Please check the [HowtoBuild document](https://github.com/hardenedvault/vaultboot/blob/master/Howtobuild.md).
 

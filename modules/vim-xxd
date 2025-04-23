@@ -1,11 +1,11 @@
 # xxd of vim
 modules-$(CONFIG_VIM_XXD) += vim-xxd
 
-vim-xxd_version := 8.2.4793
+vim-xxd_version := 9.1.1230
 vim-xxd_dir := vim-xxd-$(vim-xxd_version)
 vim-xxd_tar := vim-xxd-$(vim-xxd_version).tar.gz
 vim-xxd_url := https://github.com/vim/vim/archive/refs/tags/v$(vim-xxd_version).tar.gz
-vim-xxd_hash := 03c60203c5a8bf754b98d2ff73f69ee3474a07d3cd26819f039a94604251daab
+vim-xxd_hash := 14ab9506c3dccdcbeab8483534ab1be26133cb6d511e2e13a97aeb437a856fe0
 
 # We do not need to build vim
 vim-xxd_target := -q || true \

@@ -38,11 +38,6 @@ if [ ! -r "$TMP_MENU_FILE" ]; then
 	die "No menu options available, please run kexec-select-boot"
 fi
 
-entry=`head -n $index $TMP_MENU_FILE | tail -1`
-if [ -z "$entry" ]; then
-	die "Invalid menu index $index"
-fi
-
 KEY_DEVICES="$paramsdir/kexec_key_devices.txt"
 KEY_LVM="$paramsdir/kexec_key_lvm.txt"
 save_key="n"
@@ -123,18 +118,33 @@ if [ ! -d $paramsdir ]; then
 fi
 
 if [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
-	if [ ! -r "$PRIMHASH_FILE" ]; then
+	if [ ! -r "$PRIMHASH_FILE" || sha256sum -c "$PRIMHASH_FILE" ]; then
+		echo "(re)Generating TPM2 primary key hash..."
 		sha256sum /tmp/primary.handle > "$PRIMHASH_FILE" \
 			|| die "ERROR: Failed to Hash TPM2 primary key handle!"
 	fi
 fi
 
 rm $paramsdir/kexec_default.*.txt 2>/dev/null || true
-echo "$entry" > $ENTRY_FILE
-cd $bootdir && kexec-boot -b "$bootdir" -e "$entry" -f | \
-	xargs sha256sum > $HASH_FILE \
-|| die "Failed to create hashes of boot files"
-if [ ! -r $ENTRY_FILE -o ! -r $HASH_FILE ]; then
+if [ "$CONFIG_SIGN_BOOT_CONFIG" = "y" ]; then
+	entry=`head -n $index $TMP_MENU_FILE | tail -1`
+	if [ -z "$entry" ]; then
+		die "Invalid menu index $index"
+	fi
+	echo "$entry" > $ENTRY_FILE
+	option="-F"
+	match=""
+	initrd=`kexec-boot -b "$bootdir" -e "$entry" -i`
+	if [ "$CONFIG_VERIFY_INITRD" != "y" -o -r "${initrd}.sig" ]; then
+		option="-Fv"
+		match="`basename ${initrd}`"
+	fi
+	( cd $bootdir && kexec-boot -b "$bootdir" -e "$entry" -f \
+			| grep "$option" "$match" \
+			| xargs sha256sum > $HASH_FILE \
+	) || die "Failed to create hashes of boot files"
+fi
+if [ "$CONFIG_SIGN_BOOT_CONFIG" = "y" ] && [ ! -r $HASH_FILE -o ! -r $ENTRY_FILE ]; then
 	die "Failed to write default config"
 fi
 
@@ -145,8 +155,10 @@ if [ "$CONFIG_TPM" = "y" -o "$CONFIG_TPM2_TOOLS" = "y" ];then
 		extparam=-r
 	fi
 fi
-kexec-sign-config -p $paramsdir $extparam \
-|| die "Failed to sign default config"
+if [ -x /bin/gpg ]; then
+	kexec-sign-config -p $paramsdir $extparam \
+		|| die "Failed to sign default config"
+fi
 
 # switch back to ro mode
 mount -o ro,remount $paramsdev

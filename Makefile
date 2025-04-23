@@ -67,7 +67,7 @@ $(eval $(shell echo >&2 "$(DATE) Wrong gawk detected: $(LOCAL_GAWK_VERSION)"))
 HEADS_GAWK := $(build)/$(gawk_dir)/gawk
 
 # Once we have a suitable version of gawk, we can rerun make
-all linux cpio run payload musl-cross: $(HEADS_GAWK)
+all linux cpio run payload gwpl musl-cross: $(HEADS_GAWK)
 	LANG=C HEADS_GAWK=$(HEADS_GAWK) $(MAKE) $(MAKE_JOBS) $@
 %.clean %.vol %.menuconfig %.saveconfig: $(HEADS_GAWK)
 	LANG=C HEADS_GAWK=$(HEADS_GAWK) $(MAKE) $@
@@ -163,7 +163,7 @@ $(shell mkdir -p "$(initrd_lib_dir)" "$(initrd_bin_dir)")
 # proceed with the build.
 
 # Force pipelines to fail if any of the commands in the pipe fail
-SHELL := /bin/bash
+SHELL := /usr/bin/env bash
 .SHELLFLAGS := -o pipefail -c
 
 # Include the musl-cross module early so that $(CROSS) will
@@ -171,15 +171,20 @@ SHELL := /bin/bash
 include modules/musl-cross
 
 musl_dep	:= musl-cross
+host		:= $(shell cc -dumpmachine)
 target		:= $(shell echo $(CROSS) | grep -Eoe '([^/]*?)-linux-musl')
 arch		:= $(subst -linux-musl, , $(target))
 heads_cc	:= $(CROSS)gcc \
 	-fdebug-prefix-map=$(pwd)=heads \
 	-gno-record-gcc-switches \
 	-D__MUSL__ \
+	--sysroot  $(INSTALL) \
 	-isystem $(INSTALL)/include \
 	-L$(INSTALL)/lib \
 
+# Cross-compiling with pkg-config requires clearing PKG_CONFIG_PATH and setting
+# both PKG_CONFIG_LIBDIR and PKG_CONFIG_SYSROOT_DIR.
+# https://autotools.info/pkgconfig/cross-compiling.html
 CROSS_TOOLS_NOCC := \
 	AR="$(CROSS)ar" \
 	LD="$(CROSS)ld" \
@@ -187,7 +192,8 @@ CROSS_TOOLS_NOCC := \
 	NM="$(CROSS)nm" \
 	OBJCOPY="$(CROSS)objcopy" \
 	OBJDUMP="$(CROSS)objdump" \
-	PKG_CONFIG_PATH="$(INSTALL)/lib/pkgconfig" \
+	PKG_CONFIG_PATH= \
+	PKG_CONFIG_LIBDIR="$(INSTALL)/lib/pkgconfig" \
 	PKG_CONFIG_SYSROOT_DIR="$(INSTALL)" \
 
 ifneq "$(HEADS_GAWK)" ""
@@ -199,8 +205,13 @@ CROSS_TOOLS := \
 	$(CROSS_TOOLS_NOCC) \
 
 # Targets to build payload only
-.PHONY: payload
+.PHONY: payload gwpl
 payload: $(build)/$(BOARD)/bzImage $(build)/$(initrd_dir)/initrd.cpio.xz
+
+# gwpl means "grub-wrapped payload"
+gwpl: $(build)/$(BOARD)/gwpl.elf
+$(build)/$(BOARD)/gwpl.elf: $(build)/$(BOARD)/bzImage $(build)/$(initrd_dir)/initrd.cpio.xz
+	bin/grub-wrap $< $(word 2,$^) $@
 
 ifeq ($(CONFIG_COREBOOT), y)
 
@@ -216,7 +227,7 @@ $(info "$(BOARD): neither CONFIG_COREBOOT nor CONFIG_LINUXBOOT is set, only buil
 all: $(build)/$(BOARD)/bzImage $(build)/$(initrd_dir)/initrd.cpio.xz
 endif
 
-all payload:
+all payload gwpl:
 	@sha256sum $< | tee -a "$(HASHES)"
 
 # Disable all built in rules
@@ -520,6 +531,8 @@ bin_modules-$(CONFIG_CURL) += curl
 bin_modules-$(CONFIG_ATTEST_TOOLS) += attest-tools
 bin_modules-$(CONFIG_BASH) += bash
 bin_modules-$(CONFIG_VIM_XXD) += vim-xxd
+bin_modules-$(CONFIG_POWERPC_UTILS) += powerpc-utils
+bin_modules-$(CONFIG_IOPORT) += ioport
 
 $(foreach m, $(bin_modules-y), \
 	$(call map,initrd_bin_add,$(call bins,$m)) \
@@ -681,7 +694,7 @@ $(eval $(shell echo >&2 "$(DATE) Wrong make detected: $(LOCAL_MAKE_VERSION)"))
 HEADS_MAKE := $(build)/$(make_dir)/make
 
 # Once we have a proper Make, we can just pass arguments into it
-all linux cpio run payload musl-cross: $(HEADS_MAKE)
+all linux cpio run payload gwpl musl-cross: $(HEADS_MAKE)
 	LANG=C MAKE=$(HEADS_MAKE) $(HEADS_MAKE) $(MAKE_JOBS) $@
 %.clean %.vol %.menuconfig %.saveconfig: $(HEADS_MAKE)
 	LANG=C MAKE=$(HEADS_MAKE) $(HEADS_MAKE) $@

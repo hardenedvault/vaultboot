@@ -123,24 +123,6 @@ diff -u -r cryptsetup-2.4.3-clean/configure cryptsetup-2.4.3/configure
              hardcode_minus_L=yes
          ;;
        esac
-@@ -11755,7 +11755,7 @@
-       case $cc_basename in
-       cl*)
- 	# Native MSVC
--	hardcode_libdir_flag_spec=' '
-+	hardcode_libdir_flag_spec=" "
- 	allow_undefined_flag=unsupported
- 	always_export_symbols=yes
- 	file_list_spec='@'
-@@ -11796,7 +11796,7 @@
- 	;;
-       *)
- 	# Assume MSVC wrapper
--	hardcode_libdir_flag_spec=' '
-+	hardcode_libdir_flag_spec=" "
- 	allow_undefined_flag=unsupported
- 	# Tell ltmain to make .lib files, not .a files.
- 	libext=lib
 @@ -11847,7 +11847,7 @@
  
      dgux*)
@@ -154,15 +136,6 @@ diff -u -r cryptsetup-2.4.3-clean/configure cryptsetup-2.4.3/configure
      # extra space).
      freebsd2.2*)
        archive_cmds='$LD -Bshareable -o $lib $libobjs $deplibs $linker_flags /usr/lib/c++rt0.o'
--      hardcode_libdir_flag_spec='-R$libdir'
-+      hardcode_libdir_flag_spec=" "
-       hardcode_direct=yes
-       hardcode_shlibpath_var=no
-       ;;
-@@ -11873,7 +11873,7 @@
-     # FreeBSD 3 and greater uses gcc -shared to do shared libraries.
-     freebsd* | dragonfly*)
-       archive_cmds='$CC -shared $pic_flag -o $lib $libobjs $deplibs $compiler_flags'
 -      hardcode_libdir_flag_spec='-R$libdir'
 +      hardcode_libdir_flag_spec=" "
        hardcode_direct=yes
@@ -535,12 +508,199 @@ diff -u -r cryptsetup-2.4.3-clean/Makefile.in cryptsetup-2.4.3/Makefile.in
  @INTEGRITYSETUP_TRUE@	@BLKID_LIBS@
  
  @INTEGRITYSETUP_TRUE@@STATIC_TOOLS_TRUE@integritysetup_static_SOURCES = $(integritysetup_SOURCES)
-@@ -1206,6 +1213,8 @@
- @REENCRYPT_TRUE@	@POPT_LIBS@			\
- @REENCRYPT_TRUE@	@PWQUALITY_LIBS@		\
- @REENCRYPT_TRUE@	@PASSWDQC_LIBS@			\
-+@REENCRYPT_TRUE@	@DEVMAPPER_LIBS@		\
-+@REENCRYPT_TRUE@	@JSON_C_LIBS@			\
- @REENCRYPT_TRUE@	@UUID_LIBS@			\
- @REENCRYPT_TRUE@	@BLKID_LIBS@
  
+--- ./configure.orig	2023-11-26 14:22:30.912000000 -0500
++++ ./configure	2023-11-26 14:26:21.714000000 -0500
+@@ -12336,7 +12336,7 @@
+ 
+ 	case $cc_basename in
+ 	tcc*)
+-	  hardcode_libdir_flag_spec='$wl-rpath $wl$libdir'
++	  hardcode_libdir_flag_spec=" "
+ 	  export_dynamic_flag_spec='-rdynamic'
+ 	  ;;
+ 	xlf* | bgf* | bgxlf* | mpixlf*)
+@@ -12755,7 +12755,7 @@
+       case $cc_basename in
+       cl* | icl*)
+ 	# Native MSVC or ICC
+-	hardcode_libdir_flag_spec=' '
++	hardcode_libdir_flag_spec=" "
+ 	allow_undefined_flag=unsupported
+ 	always_export_symbols=yes
+ 	file_list_spec='@'
+@@ -12796,7 +12796,7 @@
+ 	;;
+       *)
+ 	# Assume MSVC and ICC wrapper
+-	hardcode_libdir_flag_spec=' '
++	hardcode_libdir_flag_spec=" "
+ 	allow_undefined_flag=unsupported
+ 	# Tell ltmain to make .lib files, not .a files.
+ 	libext=lib
+@@ -12873,7 +12873,7 @@
+     # FreeBSD 3 and greater uses gcc -shared to do shared libraries.
+     freebsd* | dragonfly* | midnightbsd*)
+       archive_cmds='$CC -shared $pic_flag -o $lib $libobjs $deplibs $compiler_flags'
+-      hardcode_libdir_flag_spec='-R$libdir'
++      hardcode_libdir_flag_spec=" "
+       hardcode_direct=yes
+       hardcode_shlibpath_var=no
+       ;;
+@@ -13052,7 +13052,7 @@
+ 	# Fabrice Bellard et al's Tiny C Compiler
+ 	ld_shlibs=yes
+ 	archive_cmds='$CC -shared $pic_flag -o $lib $libobjs $deplibs $compiler_flags'
+-	hardcode_libdir_flag_spec='$wl-rpath $wl$libdir'
++	hardcode_libdir_flag_spec=" "
+ 	;;
+       esac
+       ;;
+--- ./configure.mod	2023-11-26 14:46:49.779000000 -0500
++++ ./configure	2023-11-26 14:47:56.962000000 -0500
+@@ -17670,7 +17670,7 @@
+   version_type=linux # correct to gnu/linux during the next big refactor
+   need_lib_prefix=no
+   need_version=no
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   if test ia64 = "$host_cpu"; then
+     # AIX 5 supports IA64
+     library_names_spec='$libname$release$shared_ext$major $libname$release$shared_ext$versuffix $libname$shared_ext'
+@@ -17958,16 +17958,16 @@
+     ;;
+   freebsd3.[01]* | freebsdelf3.[01]*)
+     shlibpath_overrides_runpath=yes
+-    hardcode_into_libs=yes
++    hardcode_into_libs=no
+     ;;
+   freebsd3.[2-9]* | freebsdelf3.[2-9]* | \
+   freebsd4.[0-5] | freebsdelf4.[0-5] | freebsd4.1.1 | freebsdelf4.1.1)
+     shlibpath_overrides_runpath=no
+-    hardcode_into_libs=yes
++    hardcode_into_libs=no
+     ;;
+   *) # from 4.6 on, and DragonFly
+     shlibpath_overrides_runpath=yes
+-    hardcode_into_libs=yes
++    hardcode_into_libs=no
+     ;;
+   esac
+   ;;
+@@ -17982,7 +17982,7 @@
+   shlibpath_var=LIBRARY_PATH
+   shlibpath_overrides_runpath=no
+   sys_lib_dlsearch_path_spec='/boot/home/config/lib /boot/common/lib /boot/system/lib'
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   ;;
+ 
+ hpux9* | hpux10* | hpux11*)
+@@ -17994,7 +17994,7 @@
+   case $host_cpu in
+   ia64*)
+     shrext_cmds='.so'
+-    hardcode_into_libs=yes
++    hardcode_into_libs=no
+     dynamic_linker="$host_os dld.so"
+     shlibpath_var=LD_LIBRARY_PATH
+     shlibpath_overrides_runpath=yes # Unless +noenvvar is specified.
+@@ -18010,7 +18010,7 @@
+     ;;
+   hppa*64*)
+     shrext_cmds='.sl'
+-    hardcode_into_libs=yes
++    hardcode_into_libs=no
+     dynamic_linker="$host_os dld.sl"
+     shlibpath_var=LD_LIBRARY_PATH # How should we handle SHLIB_PATH
+     shlibpath_overrides_runpath=yes # Unless +noenvvar is specified.
+@@ -18043,7 +18043,7 @@
+   dynamic_linker='Interix 3.x ld.so.1 (PE, like ELF)'
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=no
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   ;;
+ 
+ irix5* | irix6* | nonstopux*)
+@@ -18080,7 +18080,7 @@
+   shlibpath_overrides_runpath=no
+   sys_lib_search_path_spec="/usr/lib$libsuff /lib$libsuff /usr/local/lib$libsuff"
+   sys_lib_dlsearch_path_spec="/usr/lib$libsuff /lib$libsuff"
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   ;;
+ 
+ # No shared lib support for Linux oldld, aout, or coff.
+@@ -18101,7 +18101,7 @@
+   # This implies no fast_install, which is unacceptable.
+   # Some rework will be needed to allow for fast_install
+   # before this can be enabled.
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+ 
+   dynamic_linker='Android linker'
+   # Don't embed -rpath directories since the linker doesn't support them.
+@@ -18159,7 +18159,7 @@
+   # This implies no fast_install, which is unacceptable.
+   # Some rework will be needed to allow for fast_install
+   # before this can be enabled.
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+ 
+   # Ideally, we could use ldconfig to report *all* directores which are
+   # searched for libraries, however this is still not possible.  Aside from not
+@@ -18189,7 +18189,7 @@
+   soname_spec='${libname}${release}${shared_ext}$major'
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=no
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   dynamic_linker='NetBSD ld.elf_so'
+   ;;
+ 
+@@ -18208,7 +18208,7 @@
+   fi
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=yes
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   ;;
+ 
+ newsos6)
+@@ -18226,7 +18226,7 @@
+   soname_spec='$libname$release$shared_ext$major'
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=no
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   dynamic_linker='ldqnx.so'
+   ;;
+ 
+@@ -18298,7 +18298,7 @@
+   soname_spec='$libname$release$shared_ext$major'
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=yes
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   # ldd complains unless libraries are executable
+   postinstall_cmds='chmod +x $lib'
+   ;;
+@@ -18355,7 +18355,7 @@
+   soname_spec='$libname$release$shared_ext$major'
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=yes
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   if test yes = "$with_gnu_ld"; then
+     sys_lib_search_path_spec='/usr/local/lib /usr/gnu/lib /usr/ccs/lib /usr/lib /lib'
+   else
+@@ -18377,7 +18377,7 @@
+   library_names_spec='$libname$release$shared_ext$versuffix $libname$release$shared_ext$major $libname$shared_ext'
+   shlibpath_var=LD_LIBRARY_PATH
+   shlibpath_overrides_runpath=no
+-  hardcode_into_libs=yes
++  hardcode_into_libs=no
+   ;;
+ 
+ uts4*)

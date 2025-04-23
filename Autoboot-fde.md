@@ -16,7 +16,7 @@ Second, Vaultboot unlocks the LUKS of the target system by generating a crypttab
 
 In the generated crypttab, Vaultboot always names the LUKSes to unlock in the format of "luks-$uuid", so you should modify the first field of the line for the volume to be unlocked by Vaultboot in the crypttab of the target system to the same "luks-$uuid" format, otherwise the boot sequence will get stuck when OS is trying to unlock them again, with a different name.
 
-Third, the path to store the crypttab in the initrd may differ among distros, but finding it at runtime needs to unpack the initrd, which may be hard to do, because of various compression method and possible prepending microcodes, so the path to crypttab in the initrd is made overridable with a file at `/boot/kexec_initrd_crypttab_path.txt`, whose content could be obtained with `$ cpio -t < ${uncompressed_initrd} | grep crypttab` . If this file is absent, the default path is `etc/crypttab`.
+Third, the path to store the crypttab in the initrd may differ among distros, but finding it at runtime needs to unpack the initrd, which may be hard to do, because of various compression method and possible prepending microcodes, so the path to crypttab in the initrd is made overridable with a file at `/boot/kexec_initrd_crypttab_path.txt`, whose content could be obtained with `$ lsinitramfs ${initrd} | grep crypttab` . If `/boot/kexec_initrd_crypttab_path.txt` is absent, the default path is `etc/crypttab`.
 
 ## Setup
 Besides normal provision, TPM-helped unlocking needs some additional info to set up.

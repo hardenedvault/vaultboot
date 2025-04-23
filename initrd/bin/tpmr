@@ -126,24 +126,31 @@ tpm2_sealfile() {
 	mkdir -p "$SECRET_DIR"
 	bname="`basename $file`"
 	tpm2 createpolicy --policy-pcr -l "$pcrl" -f "$pcrf" -L "$SECRET_DIR/pcr.policy"
-	if [ "$pass" ];then
-		tpm2 create -C "/tmp/$PRIMARY_HANDLE_FILE" -i "$file" -u "$SECRET_DIR/$bname.priv" -r "$SECRET_DIR/$bname.pub" -L "$SECRET_DIR/pcr.policy" -S "/tmp/$DEC_SESSION_FILE" -p "$pass"
+	# As stated in https://github.com/tpm2-software/tpm2-tools/issues/642 , sealing with
+	# BOTH policy and password required to unseal is not possible, so if password is needed,
+	# openssl is used to encrypt the file first.
+	if [ "$pass" ]; then
+		[ -x /bin/openssl ] || die "openssl(1) is required to deal with password"
+		openssl enc -aes-256-ctr -nosalt -pbkdf2 -k "$pass" -in "$file" \
+		    | tpm2 create -C "/tmp/$PRIMARY_HANDLE_FILE" -i- -r "$SECRET_DIR/$bname.priv" -u "$SECRET_DIR/$bname.pub" -L "$SECRET_DIR/pcr.policy" -S "/tmp/$DEC_SESSION_FILE"
 	else
-		tpm2 create -C "/tmp/$PRIMARY_HANDLE_FILE" -i "$file" -u "$SECRET_DIR/$bname.priv" -r "$SECRET_DIR/$bname.pub" -L "$SECRET_DIR/pcr.policy" -S "/tmp/$DEC_SESSION_FILE"
+		tpm2 create -C "/tmp/$PRIMARY_HANDLE_FILE" -i "$file" -r "$SECRET_DIR/$bname.priv" -u "$SECRET_DIR/$bname.pub" -L "$SECRET_DIR/pcr.policy" -S "/tmp/$DEC_SESSION_FILE"
 	fi
-	tpm2 load -C "/tmp/$PRIMARY_HANDLE_FILE" -u "$SECRET_DIR/$bname.priv" -r "$SECRET_DIR/$bname.pub" -c "$SECRET_DIR/$bname.seal.ctx"
-	read -s -p "New TPM owner password: " key_password
+	tpm2 load -C "/tmp/$PRIMARY_HANDLE_FILE" -r "$SECRET_DIR/$bname.priv" -u "$SECRET_DIR/$bname.pub" -c "$SECRET_DIR/$bname.seal.ctx"
+	read -s -p "TPM owner password: " key_password
 	# remove possible data occupying this handle
 	tpm2 evictcontrol -C o -P "$key_password" -c "$handle" 2>/dev/null || true
-	tpm2 evictcontrol -C o -P "$key_password" -c "$SECRET_DIR/$bname.seal.ctx" "$handle" 
+	tpm2 evictcontrol -C o -P "$key_password" -c "$SECRET_DIR/$bname.seal.ctx" "$handle"
 }
 
 tpm2_unseal() {
 	handle="$1"
 	pcrl="$2"
 	pass="$3"
-	if [ "$pass" ];then
-		tpm2 unseal -c "$handle" -S "/tmp/$ENC_SESSION_FILE" -p "pcr:$pcrl+$pass"
+	if [ "$pass" ]; then
+		[ -x /bin/openssl ] || die "openssl(1) is required to deal with password"
+		tpm2 unseal -c "$handle" -S "/tmp/$ENC_SESSION_FILE" -p "pcr:$pcrl" \
+		     | openssl enc -aes-256-ctr -d -nosalt -pbkdf2 -k "$pass"
 	else
 		tpm2 unseal -c "$handle" -S "/tmp/$ENC_SESSION_FILE" -p "pcr:$pcrl"
 	fi

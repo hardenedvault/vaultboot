@@ -65,9 +65,11 @@ if [ "$skip_sign" != "y" ]; then
 	if [ "$CONFIG_IGNORE_ROLLBACK" != "y" ]; then
 		extparam=-r
 	fi
-	# sign and auto-roll config counter
-	kexec-sign-config -p $paramsdir $extparam \
-	|| die "Failed to sign updated config"
+	if [ -x /bin/gpg ]; then
+		# sign and auto-roll config counter
+		kexec-sign-config -p $paramsdir $extparam \
+			|| die "Failed to sign updated config"
+	fi
 fi
 
 # switch back to ro mode

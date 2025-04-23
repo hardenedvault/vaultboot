@@ -1,17 +1,18 @@
 # cURL and libcurl
 modules-$(CONFIG_CURL) += curl
 
-curl_version := 7.83.1
+curl_version := 8.13.0
 curl_dir := curl-$(curl_version)
 curl_tar := curl-$(curl_version).tar.xz
 curl_url := https://curl.se/download/$(curl_tar)
-curl_hash := 2cb9c2356e7263a1272fd1435ef7cdebf2cd21400ec287b068396deb705c22c4
+curl_hash := 4a093979a3c2d02de2fbc00549a32771007f2e78032c6faa5ecd2f7a9e152025
 
 curl_configure := ./configure \
 	$(CROSS_TOOLS) \
 	--host $(target) \
 	--prefix "/" \
 	--with-openssl \
+	--without-libpsl \
 	--enable-optimize \
 	--disable-ares \
 	--disable-rt \

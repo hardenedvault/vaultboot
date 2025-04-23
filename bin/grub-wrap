@@ -1,0 +1,38 @@
+#!/bin/sh
+
+if ! which grub-mkimage > /dev/null; then
+	echo "grub-mkimage(1) not available!"
+	exit 1
+fi
+
+if ! [ -d /usr/lib/grub/i386-coreboot/ ]; then
+	echo "grub-coreboot-bin not available!"
+	exit 1
+fi
+
+TMPDIR=$(mktemp -d)
+VMLINUZ=${1}
+INITRD=${2}
+TARGET=${3}
+
+# put vmlinuz and initrd into the tar memdisk, as how
+# grub-mkstandalone does
+cp ${VMLINUZ} ${TMPDIR}/vmlinuz
+cp ${INITRD} ${TMPDIR}/initrd
+chmod 600 ${TMPDIR}/*
+tar -C ${TMPDIR} -chf ${TMPDIR}/memdisk.tar -H ustar --mtime='UTC 1970-01-01' \
+    --owner grub:1750 --group grub:1750 vmlinuz initrd
+
+# generate config script to launch the Linux payload
+cat > ${TMPDIR}/stub.cfg <<EOF
+linux (memdisk)/vmlinuz
+initrd (memdisk)/initrd
+boot
+EOF
+
+# pack everything into the standalone elf executable,
+# only modules for linux, memdisk and tar are needed
+grub-mkimage -vc ${TMPDIR}/stub.cfg -O i386-coreboot -o ${TARGET} \
+	     -m ${TMPDIR}/memdisk.tar 'linux' 'memdisk' 'tar'
+
+rm -r ${TMPDIR}

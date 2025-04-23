@@ -64,6 +64,15 @@ if [ "$CONFIG_TPM2_TOOLS" = "y" ]; then
 	fi
 fi
 
+# check whether $bootdir is the root of the target system
+if [ -d "$bootdir/boot" -a -d "$bootdir/dev" \
+	-a -d "$bootdir/etc" -a -d "$bootdir/home" \
+	-a -d "$bootdir/var" ]; then
+	# "$bootdir" seems to be root, without a dedicated
+	# boot partition, limit searching inside "$bootdir/boot"
+	subdir="boot"
+fi
+
 verify_global_hashes()
 {
 	echo "+++ Checking verified boot hash file "
@@ -105,6 +114,17 @@ get_menu_option() {
 		die "No boot options"
 	fi
 
+	if [ -z "$TMP_DEFAULT_FILE" -o ! -r "$TMP_DEFAULT_FILE" ]; then
+		find_suggested_default
+		local sdi=" suggested default $(grep -Fn "$(cat \
+			"$suggested_default_entry_file")" \
+			"$TMP_MENU_FILE" | head -1 | cut -d: -f1),"
+	fi
+
+	if [ "$CONFIG_SIGN_BOOT_CONFIG" != "y" ]; then
+		skipnote=", 0 to use default without saving"
+	fi
+
 	if [ $num_options -eq 1 -a $first_menu = "y" ]; then
 		option_index=1
 	elif [ "$gui_menu" = "y" ]; then
@@ -119,7 +139,7 @@ get_menu_option() {
 		done < $TMP_MENU_FILE
 
 		whiptail --clear --title "Select your boot option" \
-			--menu "Choose the boot option [1-$n, a to abort]:" 20 120 8 \
+			--menu "Choose the boot option [1-$n,$sdi a to abort$skipnote]:" 20 120 8 \
 			-- $MENU_OPTIONS \
 			2>/tmp/whiptail || die "Aborting boot attempt"
 
@@ -135,7 +155,7 @@ get_menu_option() {
 		done < $TMP_MENU_FILE
 
 		read \
-			-p "Choose the boot option [1-$n, a to abort]: " \
+			-p "Choose the boot option [1-$n,$sdi a to abort$skipnote]: " \
 			option_index
 
 		if [ "$option_index" = "a" ]; then
@@ -144,7 +164,11 @@ get_menu_option() {
 	fi
 	first_menu="n"
 
-	option=`head -n $option_index $TMP_MENU_FILE | tail -1`
+	if [ "$option_index" != "0" ]; then
+		option=`head -n $option_index $TMP_MENU_FILE | tail -1`
+	else
+		option=`cat "$suggested_default_entry_file"`
+	fi
 	parse_option
 }
 
@@ -179,15 +203,15 @@ scan_options() {
 	echo "+++ Scanning for unsigned boot options"
 	option_file="/tmp/kexec_options.txt"
 	if [ -r $option_file ]; then rm $option_file; fi
-	for i in `find $bootdir -name "$config"`; do
+	for i in `find $bootdir/$subdir -name "$config"`; do
 		kexec-parse-boot "$bootdir" "$i" >> $option_file
 	done
 	# FC29/30+ may use BLS format grub config files
 	# https://fedoraproject.org/wiki/Changes/BootLoaderSpecByDefault
 	# only parse these if $option_file is still empty
-	if [ ! -s $option_file ] && [ -d "$bootdir/loader/entries" ]; then
-		for i in `find $bootdir -name "$config"`; do
-			kexec-parse-bls "$bootdir" "$i" "$bootdir/loader/entries" >> $option_file
+	if [ ! -s $option_file ] && [ -d "$bootdir/$subdir/loader/entries" ]; then
+		for i in `find $bootdir/$subdir -name "$config"`; do
+			kexec-parse-bls "$bootdir" "$i" "$bootdir/$subdir/loader/entries" >> $option_file
 		done
 	fi
 	if [ ! -s $option_file ]; then
@@ -200,11 +224,42 @@ scan_options() {
 	fi
 }
 
+# Find default boot entry out of existing bootloader config file, and
+# make a "default entry file" with index 0 at runtime.
+find_suggested_default() {
+	suggested_default_entry_file="/tmp/kexec/kexec_default.0.txt"
+	# Try to find default entry from grub.cfg
+	local default_orig_idx=$(calc 1+$(find $bootdir/$subdir -name "$config" | \
+		xargs cat | grep -E 'set default="[0-9]+"' | head -1 | cut -d\" -f2))
+	if [ -n "$default_orig_idx" ]; then
+		head -n "$default_orig_idx" "$option_file" | tail -1 \
+			> "$suggested_default_entry_file"
+	else
+		# Try to find default entry from grubenv
+		local default_entry=$(find $bootdir/$subdir -name grubenv | \
+			xargs cat | grep 'saved_entry=' | head -1 | \
+			cut -d= -f2).conf
+		if [ "$default_entry" != ".conf" ]; then
+			for i in `find $bootdir/$subdir -name "$config"`; do
+				kexec-parse-bls "$bootdir" "$i" \
+					"$bootdir/$subdir/loader/entries/$default_entry" \
+					> "$suggested_default_entry_file"
+			done
+		fi
+	fi
+}
+
 save_default_option() {
+	local note=""
 	if [ "$gui_menu" != "y" ]; then
+		if [ "$CONFIG_SIGN_BOOT_CONFIG" = "y" ]; then
+			note="Saving a default"
+		else
+			note="Advanced config"
+		fi
 		read \
 			-n 1 \
-			-p "Saving a default will modify the disk. Proceed? (Y/n): " \
+			-p "$note will modify the disk. Proceed? (Y/n): " \
 			default_confirm
 		echo
 	fi
@@ -236,32 +291,45 @@ default_select() {
 	# Check that entry matches that which is expected from menu
 	default_index=`basename "$TMP_DEFAULT_FILE" | cut -d. -f 2`
 
-	# Check to see if entries have changed - useful for detecting grub update
-	expectedoption=`cat $TMP_DEFAULT_FILE`
-	option=`head -n $default_index $TMP_MENU_FILE | tail -1`
-	if [ "$option" != "$expectedoption" ]; then
-		if [ "$gui_menu" = "y" ]; then
-			whiptail $BG_COLOR_ERROR --title 'ERROR: Boot Entry Has Changed' \
-				--msgbox "The list of boot entries has changed\n\nPlease set a new default" 16 60
+	# "$default_index" = "0" indicates an entry suggested by bootloader
+	# config files themselves has been translated at runtime when signature
+	# verification of boot hash tree is disabled, use it without comparing.
+	if [ "$default_index" != "0" ]; then
+		# Check to see if entries have changed - useful for detecting
+		# grub update
+		expectedoption=`cat $TMP_DEFAULT_FILE`
+		option=`head -n $default_index $TMP_MENU_FILE | tail -1`
+		if [ "$option" != "$expectedoption" ]; then
+			if [ "$gui_menu" = "y" ]; then
+				whiptail $BG_COLOR_ERROR --title 'ERROR: Boot \
+					 Entry Has Changed' \
+					 --msgbox "The list of boot entries \
+					 has changed\n\nPlease set a new \
+					 default" 16 60
+			fi
+			warn "!!! Boot entry has changed - please set a new default"
+			return
 		fi
-		warn "!!! Boot entry has changed - please set a new default"
-		return
+	else
+		option=`cat $TMP_DEFAULT_FILE`
 	fi
 	parse_option
 
 	# Enforce that default option hashes are valid
 	echo "+++ Checking verified default boot hash file "
 	# Check the hashes of all the files
-	if cd $bootdir && sha256sum -c "$TMP_DEFAULT_HASH_FILE" > /tmp/hash_output ; then
-		echo "+++ Verified default boot hashes "
-		valid_hash='y'
-	else
-		if [ "$gui_menu" = "y" ]; then
-			CHANGED_FILES=$(grep -v 'OK$' /tmp/hash_output | cut -f1 -d ':')
-			whiptail $BG_COLOR_ERROR --title 'ERROR: Default Boot Hash Mismatch' \
-				--msgbox "The following files failed the verification process:\n${CHANGED_FILES}\nExiting to a recovery shell" 16 90
+	if [ "$CONFIG_SIGN_BOOT_CONFIG" = "y" ]; then
+		if cd $bootdir && sha256sum -c "$TMP_DEFAULT_HASH_FILE" > /tmp/hash_output ; then
+			echo "+++ Verified default boot hashes "
+			valid_hash='y'
+		else
+			if [ "$gui_menu" = "y" ]; then
+				CHANGED_FILES=$(grep -v 'OK$' /tmp/hash_output | cut -f1 -d ':')
+				whiptail $BG_COLOR_ERROR --title 'ERROR: Default Boot Hash Mismatch' \
+					 --msgbox "The following files failed the verification process:\n${CHANGED_FILES}\nExiting to a recovery shell" 16 90
+			fi
+			die "!!! $TMP_DEFAULT_HASH_FILE: default boot hash mismatch"
 		fi
-		die "!!! $TMP_DEFAULT_HASH_FILE: default boot hash mismatch"
 	fi
 
 	echo "+++ Executing default boot for $name:"
@@ -279,8 +347,10 @@ user_select() {
     # In force boot mode, no need offer the option to set a default, just boot
 		if [[ "$force_boot" = "y" || "$skip_confirm" = "y" ]]; then
 			do_boot
-		else
+		elif [ "$option_index" != "0" ]; then
 			confirm_menu_option
+		else
+			option_confirm="d"
 		fi
 
 		if [ "$option_confirm" = 'd' ]; then
@@ -309,7 +379,8 @@ do_boot()
 		die "!!! Missing required rollback counter state"
 	fi
 
-	if [ "$CONFIG_BOOT_REQ_HASH" = "y" -a "$valid_hash" = "n" ]; then
+	if [ "$CONFIG_SIGN_BOOT_CONFIG" = "y" -a "$CONFIG_BOOT_REQ_HASH" = "y" \
+			-a "$valid_hash" = "n" ]; then
 		die "!!! Missing required boot hashes"
 	fi
 
@@ -389,11 +460,18 @@ while true; do
 		fi
 	fi
 
-	if [ "$default_failed" != "y" \
+	if [ "$CONFIG_SIGN_BOOT_CONFIG" != "y" \
+		-a ! -r "$TMP_DEFAULT_FILE" ]; then
+		# No saved default entry, generate and use suggested default entry
+		find_suggested_default
+		TMP_DEFAULT_FILE="$suggested_default_entry_file"
+	fi
+
+	if [ "$CONFIG_SIGN_BOOT_CONFIG" != "y" \
+		-o -r "$TMP_DEFAULT_HASH_FILE" ] \
+		&& [ "$default_failed" != "y" \
 		-a "$force_menu" = "n" \
-		-a -r "$TMP_DEFAULT_FILE" \
-		-a -r "$TMP_DEFAULT_HASH_FILE" ] \
-	; then
+		-a -r "$TMP_DEFAULT_FILE" ]; then
 		default_select
 		default_failed="y"
 	else
